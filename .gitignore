@@ -1,8 +1,5 @@
-# Binary / large artifacts (reproducible)
+# Large artifacts (fast to recompute on CPU)
 *.pkl
-*.npz
-*.pt
-*.pth
 
 # Python
 __pycache__/
