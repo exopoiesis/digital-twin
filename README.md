@@ -19,6 +19,7 @@ example_results/        — Small JSON summaries for reference
 - `oracle/data/oracle_membrane_50k.npz` — 50K PDE solutions (3.2 MB)
 - `oracle/data/oracle_membrane_fno.pt` — trained FNO surrogate (13 MB)
 - `oracle/data/oracle_membrane_pinn.pt` — PINN fine-tuned model (13 MB)
+- `oracle/data/oracle_phase_b_scalers.pkl` — FNO input scalers (6 KB)
 
 ## Key results
 

@@ -1,5 +1,7 @@
 # Large artifacts (fast to recompute on CPU)
 *.pkl
+# Exception: FNO scalers are tiny (6 KB) and required to use pretrained model
+!oracle/data/oracle_phase_b_scalers.pkl
 
 # Python
 __pycache__/
@@ -11,6 +13,9 @@ build/
 
 # Old versions
 *_OLD.py
+
+# Generated output
+hypothesis_results/
 
 # OS
 .DS_Store
