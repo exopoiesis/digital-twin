@@ -1,0 +1,25 @@
+# Binary / large artifacts (reproducible)
+*.pkl
+*.npz
+*.pt
+*.pth
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Old versions
+*_OLD.py
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
