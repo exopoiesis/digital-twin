@@ -74,7 +74,7 @@ Examples:
                         choices=['single', 'sweep', 'threshold', 'grid2d', 'montecarlo'],
                         help='Query mode')
     parser.add_argument('--output-dir', default=None,
-                        help='Output directory (default: digital-twin/hypothesis_results/)')
+                        help='Output directory (default: hypothesis-tester/hypothesis_results/)')
     parser.add_argument('--tag', default=None,
                         help='Tag for output filenames')
     parser.add_argument('--device', default='cpu', help='Torch device')
@@ -124,7 +124,7 @@ Examples:
     print("Loading FNO model...")
     model_path = args.model_path
     if model_path is None:
-        model_path = str(Path(__file__).parent / 'fno_results' / 'oracle_membrane_fno.pt')
+        model_path = str(Path(__file__).resolve().parent.parent / 'oracle' / 'data' / 'oracle_membrane_fno.pt')
 
     model, scaler_params, scaler_ph, scaler_scalars, x_grid, param_order = load_fno(
         model_path, device=args.device

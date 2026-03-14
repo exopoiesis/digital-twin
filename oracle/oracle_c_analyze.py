@@ -4,7 +4,7 @@ import numpy as np
 import json
 from pathlib import Path
 
-OUT = Path(__file__).parent.parent / "results" / "oracle_phase_c"
+OUT = Path(__file__).parent / "data"
 
 # 3sp
 d = np.load(OUT / 'oracle_c_3sp.npz')

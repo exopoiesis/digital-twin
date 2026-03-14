@@ -46,7 +46,7 @@ def print(*args, **kwargs):
 # ============================================================================
 
 SCRIPT_DIR = Path(__file__).parent
-OUT_DIR = SCRIPT_DIR.parent / "results" / "oracle_phase_c"
+OUT_DIR = SCRIPT_DIR / "data"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 

@@ -19,7 +19,7 @@ physics-based per-geometry rate derivation from FNO A_steady.
 Usage:
   python oracle_phase_d_fno_ode.py --validate
   python oracle_phase_d_fno_ode.py --scan
-  python oracle_phase_d_fno_ode.py --validate --scan --output-dir digital-twin/phase_d_results
+  python oracle_phase_d_fno_ode.py --validate --scan --output-dir phase_d_results
 
 Author: Third Matter Research Project
 Date: 2026-03-10
@@ -912,7 +912,7 @@ def run_phase_d(
     else:
         if model_path is None:
             model_path = str(
-                Path(__file__).parent / 'fno_results' / 'oracle_membrane_fno.pt'
+                Path(__file__).parent / 'data' / 'oracle_membrane_fno.pt'
             )
         model, scaler_params, scaler_ph, scaler_scalars, x_grid, param_order = load_fno(
             model_path, scalers_path, device
@@ -1200,7 +1200,7 @@ def membrane_geometry_scan(
     # Load FNO once
     if model_path is None:
         model_path = str(
-            Path(__file__).parent / 'fno_results' / 'oracle_membrane_fno.pt'
+            Path(__file__).parent / 'data' / 'oracle_membrane_fno.pt'
         )
     model, scaler_params, scaler_ph, scaler_scalars, x_grid, param_order = load_fno(
         model_path, scalers_path, device
@@ -1475,7 +1475,7 @@ def main():
         '--model-path', type=str,
         default=None,
         help='Path to trained FNO checkpoint (.pt). '
-             'Default: digital-twin/fno_results/oracle_membrane_fno.pt'
+             'Default: oracle/data/oracle_membrane_fno.pt'
     )
     parser.add_argument(
         '--scalers-path', type=str,
@@ -1499,7 +1499,7 @@ def main():
         '--output-dir', type=str,
         default=None,
         help='Output directory for results. '
-             'Default: digital-twin/phase_d_results/'
+             'Default: oracle/phase_d_results/'
     )
     parser.add_argument(
         '--device', type=str, default='cpu',
@@ -1514,7 +1514,7 @@ def main():
     digital_twin_dir = Path(__file__).parent
 
     if args.model_path is None:
-        args.model_path = str(digital_twin_dir / 'fno_results' / 'oracle_membrane_fno.pt')
+        args.model_path = str(digital_twin_dir / 'data' / 'oracle_membrane_fno.pt')
 
     if args.output_dir is None:
         output_dir = digital_twin_dir / 'phase_d_results'

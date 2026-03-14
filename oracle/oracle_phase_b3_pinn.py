@@ -1085,13 +1085,13 @@ def plot_training_curves_pinn(history: Dict, output_path: Path):
 
 def main():
     parser = argparse.ArgumentParser(description='ORACLE Phase B.3: PINN Training')
-    parser.add_argument('--data', type=str, default='digital-twin/oracle_dataset_50k.h5',
+    parser.add_argument('--data', type=str, default='oracle/data/oracle_membrane_50k.npz',
                         help='Input NPZ file')
-    parser.add_argument('--pretrained', type=str, default='digital-twin/fno_results_50k/oracle_membrane_fno.pt',
+    parser.add_argument('--pretrained', type=str, default='oracle/data/oracle_membrane_fno.pt',
                         help='Pretrained FNO checkpoint')
-    parser.add_argument('--scalers', type=str, default='digital-twin/fno_results_50k/oracle_phase_b_scalers.pkl',
+    parser.add_argument('--scalers', type=str, default='oracle/data/oracle_phase_b_scalers.pkl',
                         help='Pretrained scalers')
-    parser.add_argument('--output-dir', type=str, default='digital-twin/pinn_results/',
+    parser.add_argument('--output-dir', type=str, default='oracle/data/',
                         help='Output directory')
     parser.add_argument('--epochs', type=int, default=100, help='Max epochs')
     parser.add_argument('--batch-size', type=int, default=128, help='Batch size')

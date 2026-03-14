@@ -12,7 +12,7 @@ from scipy.stats.qmc import LatinHypercube
 from pathlib import Path
 
 # Output file
-OUT_DIR = Path(__file__).parent.parent / "results" / "oracle_phase_c"
+OUT_DIR = Path(__file__).parent / "data"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 LOG = OUT_DIR / "oracle_c_log.txt"
 
