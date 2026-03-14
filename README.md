@@ -34,18 +34,54 @@ example_results/        — Small JSON summaries for reference
 
 ## Quick start
 
+All pretrained models and datasets are included — no GPU needed to start exploring.
+
 ```bash
 pip install -r requirements.txt
 
-# Phase A: generate Sobol samples + Gillespie (takes ~2h on 8 cores)
-python oracle/oracle_phase_a.py
+# Test a single hypothesis (uses pretrained FNO from oracle/data/)
+python hypothesis-tester/oracle_hypothesis_tester.py --mode single --no-plot
 
-# Analyse Phase A results (RF classifier)
-python oracle/oracle_analysis.py
-
-# Hypothesis testing (requires trained FNO from Phase B)
+# Sweep mackinawite thickness
 python hypothesis-tester/oracle_hypothesis_tester.py --mode sweep \
-  --param L_mack --min 5 --max 200 --n 30
+  --param L_mack --range 5,200 --n 30
+
+# Monte Carlo robustness check
+python hypothesis-tester/oracle_hypothesis_tester.py --mode montecarlo \
+  --vary L_mack --spread 0.3 --n 100
+```
+
+## Reproducing from scratch
+
+If you want to regenerate everything from raw simulations:
+
+```bash
+# Phase A: Sobol × Gillespie sampling (~2h on 8 cores, CPU)
+python oracle/oracle_phase_a.py --output oracle/data/oracle_full.npz
+
+# Phase A analysis: train RF classifier, extract feature importances (~2 min, CPU)
+# Produces oracle_rf_classifier.pkl (~1.1 GB) + summary plots
+python oracle/oracle_analysis.py oracle/data/oracle_full.npz \
+  --output-dir oracle/data/
+
+# Phase B.1: generate PDE training data (~4h, GPU recommended)
+python oracle/oracle_phase_b_datagen.py --output oracle/data/oracle_membrane_50k.npz
+
+# Phase B.2: train FNO surrogate (~30 min, GPU)
+python oracle/oracle_phase_b_train.py --data oracle/data/oracle_membrane_50k.npz \
+  --output-dir oracle/data/
+
+# Phase B.3: PINN fine-tuning (~20 min, GPU)
+python oracle/oracle_phase_b3_pinn.py --data oracle/data/oracle_membrane_50k.npz \
+  --pretrained oracle/data/oracle_membrane_fno.pt \
+  --scalers oracle/data/oracle_phase_b_scalers.pkl \
+  --output-dir oracle/data/
+
+# Phase C: degradation analysis (~1h, CPU)
+python oracle/oracle_phase_c_degradation.py
+
+# Phase D: FNO-ODE geometry scans (~5 min, CPU)
+python oracle/oracle_phase_d_fno_ode.py --validate --scan
 ```
 
 See `oracle/README.md` and `hypothesis-tester/README.md` for details.
