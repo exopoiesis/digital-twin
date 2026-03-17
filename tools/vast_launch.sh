@@ -19,6 +19,7 @@
 #   /workspace/results/crash_info  — crash details if non-zero exit
 
 set -uo pipefail
+export TZ=Europe/Kyiv
 
 SCRIPT="$1"
 shift

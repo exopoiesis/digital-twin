@@ -9,7 +9,9 @@
 # Logs: /workspace/results/monitor.log (rotates at 10MB)
 # PID:  /workspace/results/monitor.pid
 
-set -euo pipefail
+set -uo pipefail
+# NOTE: no -e ! Monitor is a long-running daemon, must not exit on grep/dmesg failures
+export TZ=Europe/Kyiv
 
 LOGFILE="/workspace/results/monitor.log"
 PIDFILE="/workspace/results/monitor.pid"

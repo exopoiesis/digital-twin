@@ -13,6 +13,7 @@
 #   OUTPUT      — output XYZ path (default: /workspace/results/sulfide_train.xyz)
 
 set -eo pipefail
+export TZ=Europe/Kyiv
 
 RESULTS_DIR="/workspace/results"
 MONITOR_SCRIPT="/workspace/vast_monitor.sh"
@@ -29,7 +30,9 @@ log "Writing monitoring scripts..."
 cat > "$MONITOR_SCRIPT" << 'MONITOR_EOF'
 #!/bin/bash
 # Inline copy of vast_monitor.sh
-set -euo pipefail
+set -uo pipefail
+# no -e: daemon must not exit on grep/dmesg returning non-zero
+export TZ=Europe/Kyiv
 LOGFILE="/workspace/results/monitor.log"
 PIDFILE="/workspace/results/monitor.pid"
 HEARTBEAT="/workspace/results/heartbeat"
