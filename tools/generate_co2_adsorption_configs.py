@@ -92,7 +92,7 @@ def build_greigite_conventional():
         basis=[
             (0.125, 0.125, 0.125),   # 8a tetrahedral Fe
             (0.5, 0.5, 0.5),         # 16d octahedral Fe
-            (0.254, 0.254, 0.254),   # 32e sulfur
+            (0.380, 0.380, 0.380),   # 32e sulfur (setting 1, ASE default)
         ],
         spacegroup=227,
         cellpar=[9.876, 9.876, 9.876, 90, 90, 90],
@@ -535,20 +535,30 @@ def generate_all_configs():
     return configs
 
 
+def set_magnetic_moments(atoms):
+    """Set initial magnetic moments (Vaughan 2006)."""
+    magmoms = []
+    for sym in atoms.get_chemical_symbols():
+        if sym == 'Fe':
+            magmoms.append(1.7)
+        elif sym == 'Ni':
+            magmoms.append(0.3)
+        else:
+            magmoms.append(0.0)
+    atoms.set_initial_magnetic_moments(magmoms)
+
+
 def run_gpaw_single_point(atoms, config_label):
     """Run GPAW single-point (adsorption configs are always slabs)."""
     from gpaw import GPAW, PW, FermiDirac
 
-    n_atoms = len(atoms)
+    set_magnetic_moments(atoms)
 
-    # Adsorption configs are always slabs
+    n_atoms = len(atoms)
     mode = PW(400)
 
-    # k-points: all adsorption configs are slabs
     if n_atoms > 60:
-        kpts = (1, 1, 1)  # Very large slabs (greigite/pentlandite)
-    elif n_atoms > 40:
-        kpts = (2, 2, 1)
+        kpts = (1, 1, 1)
     else:
         kpts = (2, 2, 1)
 
@@ -558,8 +568,9 @@ def run_gpaw_single_point(atoms, config_label):
         kpts=kpts,
         occupations=FermiDirac(0.1),
         convergence={'energy': 1e-5},
+        maxiter=500,
         parallel={'augment_grids': True},
-        txt=None,
+        txt=f'/workspace/results/{config_label}.txt',
     )
 
     atoms.calc = calc

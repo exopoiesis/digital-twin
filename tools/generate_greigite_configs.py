@@ -44,7 +44,7 @@ def build_greigite() -> Atoms:
     Inverse spinel structure:
       8a  (1/8, 1/8, 1/8):   Fe3+ (tetrahedral A-site)
       16d (1/2, 1/2, 1/2):   Fe2.5+ (octahedral B-site, mixed valence)
-      32e (u, u, u), u≈0.254: S2-
+      32e (u, u, u), u≈0.380 (setting 1): S2-
 
     Unit cell: 8 Fe3S4 = 56 atoms (8×Fe_A + 16×Fe_B + 32×S)
     For training data we use the primitive cell (14 atoms).
@@ -56,7 +56,7 @@ def build_greigite() -> Atoms:
         basis=[
             (0.125, 0.125, 0.125),   # 8a tetrahedral Fe
             (0.5, 0.5, 0.5),         # 16d octahedral Fe
-            (0.254, 0.254, 0.254),   # 32e sulfur
+            (0.380, 0.380, 0.380),   # 32e sulfur (setting 1, ASE default)
         ],
         spacegroup=227,
         cellpar=[9.876, 9.876, 9.876, 90, 90, 90],
@@ -72,7 +72,7 @@ def build_greigite_conventional() -> Atoms:
         basis=[
             (0.125, 0.125, 0.125),
             (0.5, 0.5, 0.5),
-            (0.254, 0.254, 0.254),
+            (0.380, 0.380, 0.380),
         ],
         spacegroup=227,
         cellpar=[9.876, 9.876, 9.876, 90, 90, 90],
@@ -281,9 +281,27 @@ def generate_all_configs():
     return configs
 
 
+def set_magnetic_moments(atoms):
+    """Set initial magnetic moments for greigite (ferrimagnetic).
+
+    Greigite: Fe_tet=3.5, Fe_oct=-3.1 (Chang 2008).
+    Simplified: all Fe=3.5 (sign doesn't matter for initial guess,
+    DFT will find the antiparallel arrangement).
+    """
+    magmoms = []
+    for sym in atoms.get_chemical_symbols():
+        if sym == 'Fe':
+            magmoms.append(3.5)
+        else:
+            magmoms.append(0.0)
+    atoms.set_initial_magnetic_moments(magmoms)
+
+
 def run_gpaw_single_point(atoms, config_label, is_slab=False):
     """Run GPAW single-point (same settings as v2 datagen)."""
     from gpaw import GPAW, PW, FermiDirac
+
+    set_magnetic_moments(atoms)
 
     n_atoms = len(atoms)
     mode = PW(400) if is_slab or n_atoms > 30 else PW(500)
@@ -301,8 +319,9 @@ def run_gpaw_single_point(atoms, config_label, is_slab=False):
         kpts=kpts,
         occupations=FermiDirac(0.1),
         convergence={'energy': 1e-5},
+        maxiter=500,
         parallel={'augment_grids': True},
-        txt=None,
+        txt=f'/workspace/results/{config_label}.txt',
     )
 
     atoms.calc = calc

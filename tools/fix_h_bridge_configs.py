@@ -195,9 +195,24 @@ def generate_fixed_configs():
     return configs
 
 
+def set_magnetic_moments(atoms):
+    """Set initial magnetic moments (Vaughan 2006)."""
+    magmoms = []
+    for sym in atoms.get_chemical_symbols():
+        if sym == 'Fe':
+            magmoms.append(1.7)
+        elif sym == 'Ni':
+            magmoms.append(0.3)
+        else:
+            magmoms.append(0.0)
+    atoms.set_initial_magnetic_moments(magmoms)
+
+
 def run_gpaw_single_point(atoms, config_label):
     """Run GPAW single-point (slab settings)."""
     from gpaw import GPAW, PW, FermiDirac
+
+    set_magnetic_moments(atoms)
 
     calc = GPAW(
         mode=PW(400),
@@ -205,8 +220,9 @@ def run_gpaw_single_point(atoms, config_label):
         kpts=(2, 2, 1),
         occupations=FermiDirac(0.1),
         convergence={'energy': 1e-5},
+        maxiter=500,
         parallel={'augment_grids': True},
-        txt=None,
+        txt=f'/workspace/results/{config_label}.txt',
     )
 
     atoms.calc = calc
