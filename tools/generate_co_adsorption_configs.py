@@ -334,7 +334,8 @@ def run_gpaw_single_point(atoms, config_label):
 
     set_magnetic_moments(atoms)
 
-    kpts = (2, 2, 1)  # all configs are slabs
+    n_atoms = len(atoms)
+    kpts = (1, 1, 1) if n_atoms > 60 else (2, 2, 1)
 
     calc = GPAW(
         mode=PW(400),
