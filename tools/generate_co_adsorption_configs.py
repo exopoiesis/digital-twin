@@ -312,11 +312,25 @@ def generate_all_configs():
     return configs
 
 
-def run_gpaw_single_point(atoms, config_label):
-    from gpaw import GPAW, PW, FermiDirac
+def set_magnetic_moments(atoms):
+    """Set initial magnetic moments for Fe/Ni sulfide systems."""
+    magmoms = []
+    for sym in atoms.get_chemical_symbols():
+        if sym == 'Fe':
+            magmoms.append(2.0)
+        elif sym == 'Ni':
+            magmoms.append(0.6)
+        else:
+            magmoms.append(0.0)
+    atoms.set_initial_magnetic_moments(magmoms)
 
-    n_atoms = len(atoms)
-    kpts = (1, 1, 1) if n_atoms > 60 else (2, 2, 1)
+
+def run_gpaw_single_point(atoms, config_label):
+    from gpaw import GPAW, PW, FermiDirac, MixerDif
+
+    set_magnetic_moments(atoms)
+
+    kpts = (2, 2, 1)  # all configs are slabs
 
     calc = GPAW(
         mode=PW(400),
@@ -324,8 +338,10 @@ def run_gpaw_single_point(atoms, config_label):
         kpts=kpts,
         occupations=FermiDirac(0.1),
         convergence={'energy': 1e-5},
+        mixer=MixerDif(beta=0.05, nmaxold=5, weight=50.0),
+        maxiter=500,
         parallel={'augment_grids': True},
-        txt=None,
+        txt=f'/workspace/results/{config_label}.txt',
     )
 
     atoms.calc = calc
