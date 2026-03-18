@@ -2,19 +2,19 @@
 """
 Generate DFT training data for greigite Fe3S4 (Tier 1 expansion).
 
-Greigite is an inverse thiospinel (Fd-3m, #227) — the key mineral for
+Greigite is an inverse thiospinel (Fd-3m, #227) --the key mineral for
 CO2 reduction in origin-of-life research (Roldan 2015).
 
 MACE-MP-0 is known to fail on spinels, making this data critical.
 
 Config breakdown (~74 configs):
   Bulk eq + rattles (0.03-0.20):    25
-  Bulk strains (±1-5%):             10
+  Bulk strains (+/-1-5%):            10
   Bulk shears:                       5
   2x2x2 supercell rattles:          10
   (001) slab + rattles:              6
   (111) slab + rattles:              6
-  H adsorption (3 sites × 2 surf):  6
+  H adsorption (3 sites x 2 surf):   6
   S-vacancy bulk:                    3
   S-vacancy surface:                 3
   TOTAL:                            ~74
@@ -45,13 +45,13 @@ def build_greigite() -> Atoms:
     Inverse spinel structure:
       8a  (1/8, 1/8, 1/8):   Fe3+ (tetrahedral A-site)
       16d (1/2, 1/2, 1/2):   Fe2.5+ (octahedral B-site, mixed valence)
-      32e (u, u, u), u≈0.380 (setting 1): S2-
+      32e (u, u, u), u~0.380 (setting 1): S2-
 
-    Unit cell: 8 Fe3S4 = 56 atoms (8×Fe_A + 16×Fe_B + 32×S)
+    Unit cell: 8 Fe3S4 = 56 atoms (8*Fe_A + 16*Fe_B + 32*S)
     For training data we use the primitive cell (14 atoms).
     """
     # Primitive cell of Fd-3m has 2 formula units = 14 atoms
-    # Use conventional cell parameters: a = 9.876 Å
+    # Use conventional cell parameters: a = 9.876 A
     atoms = crystal(
         symbols=['Fe', 'Fe', 'S'],
         basis=[
@@ -123,8 +123,10 @@ def shear_atoms(atoms, label_prefix):
 
 
 def build_greigite_surface_001():
-    """Build greigite (001) slab + rattled variants."""
+    """Build greigite (001) slab + rattled variants.
+    Ferrimagnetic magmoms set on bulk BEFORE surface() so ASE propagates."""
     greig = build_greigite_conventional()
+    set_ferrimagnetic_magmoms(greig)
     slab = surface(greig, (0, 0, 1), layers=2, vacuum=12.0)
     # Greigite conventional cell is large, so 1x1 slab is already ~56 atoms/layer
 
@@ -137,8 +139,10 @@ def build_greigite_surface_001():
 
 
 def build_greigite_surface_111():
-    """Build greigite (111) slab — octahedral termination, relevant for CO2RR."""
+    """Build greigite (111) slab --octahedral termination, relevant for CO2RR.
+    Ferrimagnetic magmoms set on bulk BEFORE surface() so ASE propagates."""
     greig = build_greigite_conventional()
+    set_ferrimagnetic_magmoms(greig)
     slab = surface(greig, (1, 1, 1), layers=2, vacuum=12.0)
 
     configs = [(slab.copy(), "greigite_111_slab")]
@@ -152,6 +156,7 @@ def build_greigite_surface_111():
 def build_greigite_H_adsorption():
     """Build greigite surfaces with H at different adsorption sites."""
     greig = build_greigite_conventional()
+    set_ferrimagnetic_magmoms(greig)
     configs = []
 
     for miller, miller_str, seed_base in [((0,0,1), '001', 700), ((1,1,1), '111', 800)]:
@@ -199,6 +204,7 @@ def build_greigite_S_vacancy():
 
     # Bulk S-vacancy
     greig = build_greigite()
+    set_ferrimagnetic_magmoms(greig)
     syms = np.array(greig.get_chemical_symbols())
     s_indices = np.where(syms == 'S')[0]
 
@@ -209,6 +215,7 @@ def build_greigite_S_vacancy():
 
     # Surface S-vacancy
     greig_conv = build_greigite_conventional()
+    set_ferrimagnetic_magmoms(greig_conv)
     slab = surface(greig_conv, (0, 0, 1), layers=2, vacuum=12.0)
     syms_slab = np.array(slab.get_chemical_symbols())
     s_indices_slab = np.where(syms_slab == 'S')[0]
@@ -282,27 +289,60 @@ def generate_all_configs():
     return configs
 
 
-def set_magnetic_moments(atoms):
-    """Set initial magnetic moments for greigite (ferrimagnetic).
+def set_ferrimagnetic_magmoms(atoms, mu_tet=3.5, mu_oct=-3.5):
+    """Set ferrimagnetic moments for greigite (inverse spinel).
 
-    Greigite: Fe_tet=3.5, Fe_oct=-3.1 (Chang 2008).
-    Simplified: all Fe=3.5 (sign doesn't matter for initial guess,
-    DFT will find the antiparallel arrangement).
+    Must be called BEFORE surface()/repeat() so ASE propagates magmoms.
+
+    Uses coordination number analysis to identify tetrahedral (CN<=4)
+    vs octahedral (CN>=5) Fe sites. This is robust regardless of
+    atom ordering from ASE crystal() (which generates 16d oct FIRST
+    in Fd-3m setting 1, not 8a tet as one might expect).
+
+    Greigite ferrimagnetic: tet Fe = +3.5, oct Fe = -3.5 (Chang 2008).
     """
-    magmoms = []
-    for sym in atoms.get_chemical_symbols():
-        if sym == 'Fe':
-            magmoms.append(3.5)
+    from ase.neighborlist import neighbor_list
+
+    syms = np.array(atoms.get_chemical_symbols())
+    s_indices = set(np.where(syms == 'S')[0])
+
+    # Count S neighbors within 3.0 A for each Fe
+    i_list, j_list, d_list = neighbor_list('ijd', atoms, cutoff=3.0)
+
+    magmoms = np.zeros(len(atoms))
+    n_tet = 0
+    n_oct = 0
+    for idx in range(len(atoms)):
+        if syms[idx] != 'Fe':
+            continue
+        # Count sulfur neighbors
+        mask = (i_list == idx) & np.isin(j_list, list(s_indices))
+        n_s = int(np.sum(mask))
+        if n_s <= 4:
+            magmoms[idx] = mu_tet  # tetrahedral
+            n_tet += 1
         else:
-            magmoms.append(0.0)
+            magmoms[idx] = mu_oct  # octahedral
+            n_oct += 1
+
+    n_fe = n_tet + n_oct
+    if n_fe > 0 and n_tet != n_fe // 3:
+        print(f"WARNING: Expected {n_fe//3} tet Fe, got {n_tet} "
+              f"(oct={n_oct}). Check cutoff.", flush=True)
+
     atoms.set_initial_magnetic_moments(magmoms)
+    return atoms
 
 
 def run_gpaw_single_point(atoms, config_label, is_slab=False):
     """Run GPAW single-point (same settings as v2 datagen)."""
-    from gpaw import GPAW, PW, FermiDirac
+    from gpaw import GPAW, PW, FermiDirac, MixerDif
 
-    set_magnetic_moments(atoms)
+    # Use existing ferrimagnetic magmoms if set (from build functions).
+    # Otherwise set them here (for bulk configs without pre-set magmoms).
+    existing_magmoms = atoms.get_initial_magnetic_moments()
+    if not np.any(existing_magmoms != 0):
+        set_ferrimagnetic_magmoms(atoms)
 
     n_atoms = len(atoms)
     mode = PW(400) if is_slab or n_atoms > 30 else PW(500)
@@ -314,6 +354,9 @@ def run_gpaw_single_point(atoms, config_label, is_slab=False):
     else:
         kpts = (4, 4, 4)
 
+    # Gentler mixing for slabs (ferrimagnetic + broken symmetry)
+    mix_beta = 0.03 if is_slab else 0.05
+
     calc = GPAW(
         mode=mode,
         xc='PBE',
@@ -321,6 +364,7 @@ def run_gpaw_single_point(atoms, config_label, is_slab=False):
         occupations=FermiDirac(0.1),
         convergence={'energy': 1e-5},
         maxiter=500,
+        mixer=MixerDif(mix_beta, 5, 50),
         parallel={'augment_grids': True},
         txt=f'/workspace/results/{config_label}.txt',
     )
@@ -369,7 +413,7 @@ def main():
     configs = generate_all_configs()
 
     if args.dry_run:
-        print("\nDRY RUN — config list:")
+        print("\nDRY RUN --config list:")
         for atoms, label, is_slab in configs:
             slab_tag = " [SLAB]" if is_slab else ""
             print(f"  {label}: {len(atoms)} atoms{slab_tag}")
@@ -407,7 +451,7 @@ def main():
             with open(log_path, 'a') as f:
                 f.write(msg + '\n')
         except Exception as e:
-            msg = f"[{i+1}/{len(remaining)}] {label}: FAILED — {e}"
+            msg = f"[{i+1}/{len(remaining)}] {label}: FAILED --{e}"
             print(msg, flush=True)
             with open(log_path, 'a') as f:
                 f.write(msg + '\n')
