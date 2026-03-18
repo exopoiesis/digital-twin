@@ -217,7 +217,7 @@ def run_gpaw_single_point(atoms, config_label, is_slab=False):
       - FermiDirac(0.1)
       - convergence energy 1e-5
     """
-    from gpaw import GPAW, PW, FermiDirac
+    from gpaw import GPAW, PW, FermiDirac, MixerDif
 
     n_atoms = len(atoms)
     mode = PW(400) if is_slab or n_atoms > 30 else PW(500)
@@ -229,14 +229,20 @@ def run_gpaw_single_point(atoms, config_label, is_slab=False):
     else:
         kpts = (4, 4, 4)
 
+    # Marcasite FeS2: antiferromagnetic, Fe magmom=1.7 (Vaughan 2006)
+    magmoms = [1.7 if sym == 'Fe' else 0.0 for sym in atoms.get_chemical_symbols()]
+    atoms.set_initial_magnetic_moments(magmoms)
+
     calc = GPAW(
         mode=mode,
         xc='PBE',
         kpts=kpts,
         occupations=FermiDirac(0.1),
         convergence={'energy': 1e-5},
+        maxiter=500,
+        mixer=MixerDif(0.05, 5, 50),
         parallel={'augment_grids': True},
-        txt=None,
+        txt=f'/workspace/results/marcasite/{config_label}.txt',
     )
 
     atoms.calc = calc
@@ -286,7 +292,7 @@ def main():
     configs = generate_all_configs()
 
     if args.dry_run:
-        print("\nDRY RUN — config list:")
+        print("\nDRY RUN -- config list:")
         for atoms, label, is_slab in configs:
             slab_tag = " [SLAB]" if is_slab else ""
             print(f"  {label}: {len(atoms)} atoms{slab_tag}")
@@ -320,7 +326,7 @@ def main():
             with open(log_path, 'a') as f:
                 f.write(msg + '\n')
         except Exception as e:
-            msg = f"[{i+1}/{len(remaining)}] {label}: FAILED — {e}"
+            msg = f"[{i+1}/{len(remaining)}] {label}: FAILED -- {e}"
             print(msg, flush=True)
             with open(log_path, 'a') as f:
                 f.write(msg + '\n')
