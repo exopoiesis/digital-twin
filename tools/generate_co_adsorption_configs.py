@@ -334,8 +334,7 @@ def run_gpaw_single_point(atoms, config_label):
 
     set_magnetic_moments(atoms)
 
-    n_atoms = len(atoms)
-    kpts = (1, 1, 1) if n_atoms > 60 else (2, 2, 1)
+    kpts = (2, 2, 1)  # all configs are slabs; needs >=16 GB VRAM for pentlandite
 
     calc = GPAW(
         mode=PW(400),
