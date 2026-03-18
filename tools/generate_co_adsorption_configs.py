@@ -313,13 +313,17 @@ def generate_all_configs():
 
 
 def set_magnetic_moments(atoms):
-    """Set initial magnetic moments for Fe/Ni sulfide systems."""
+    """Set initial magnetic moments for Fe/Ni sulfide systems.
+
+    Values from physical_properties_validation.py (Vaughan 2006):
+      pentlandite: Fe=1.7, Ni=0.3 (Pauli paramagnetic)
+    """
     magmoms = []
     for sym in atoms.get_chemical_symbols():
         if sym == 'Fe':
-            magmoms.append(2.0)
+            magmoms.append(1.7)
         elif sym == 'Ni':
-            magmoms.append(0.6)
+            magmoms.append(0.3)
         else:
             magmoms.append(0.0)
     atoms.set_initial_magnetic_moments(magmoms)
