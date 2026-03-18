@@ -36,6 +36,9 @@ from ase.spacegroup import crystal
 from gpaw_checkpoint import register_sigterm_handler, is_shutdown_requested
 
 
+MARC_A, MARC_B, MARC_C = 4.443, 5.425, 3.387
+
+
 def build_marcasite():
     """Build marcasite FeS2 primitive cell (Pnnm, #58, orthorhombic).
 
@@ -53,9 +56,37 @@ def build_marcasite():
             (0.200, 0.378, 0.0),   # 4g S
         ],
         spacegroup=58,
-        cellpar=[4.443, 5.425, 3.387, 90, 90, 90],
+        cellpar=[MARC_A, MARC_B, MARC_C, 90, 90, 90],
         primitive_cell=True,
     )
+    return atoms
+
+
+def set_afm_magmoms_bulk(atoms, mu=1.7):
+    """Set AFM moments on marcasite BULK primitive cell (6 atoms, 2 Fe).
+
+    Must be called BEFORE surface()/repeat() so ASE propagates magmoms.
+    Marcasite Pnnm: Fe1 at (0,0,0) = +mu, Fe2 at (1/2,1/2,1/2) = -mu.
+    """
+    syms = atoms.get_chemical_symbols()
+    pos = atoms.positions
+    magmoms = np.zeros(len(atoms))
+    fe_indices = [i for i, s in enumerate(syms) if s == 'Fe']
+
+    if len(fe_indices) != 2:
+        raise ValueError(f"Expected 2 Fe in bulk cell, got {len(fe_indices)}")
+
+    # Fe closer to origin = sublattice 0 (+mu), other = sublattice 1 (-mu)
+    d0 = np.linalg.norm(pos[fe_indices[0]])
+    d1 = np.linalg.norm(pos[fe_indices[1]])
+    if d0 <= d1:
+        magmoms[fe_indices[0]] = +mu
+        magmoms[fe_indices[1]] = -mu
+    else:
+        magmoms[fe_indices[0]] = -mu
+        magmoms[fe_indices[1]] = +mu
+
+    atoms.set_initial_magnetic_moments(magmoms)
     return atoms
 
 
@@ -99,9 +130,10 @@ def build_marcasite_surface_010():
     """Build marcasite (010) slab + rattled variants.
 
     (010) is the b-axis normal surface, common for layered structures.
+    AFM magmoms set on bulk BEFORE surface() so ASE propagates them.
     """
     marc = build_marcasite()
-    # Repeat 2x2x1 to get adequate slab size
+    set_afm_magmoms_bulk(marc)  # AFM on 2 Fe, propagates through surface/repeat
     slab = surface(marc, (0, 1, 0), layers=2, vacuum=12.0)
     slab = slab.repeat((2, 1, 2))
 
@@ -117,6 +149,7 @@ def build_marcasite_surface_010():
 def build_marcasite_H_adsorption():
     """Build marcasite (010) surface with H at different adsorption sites."""
     marc = build_marcasite()
+    set_afm_magmoms_bulk(marc)  # AFM propagates through surface/repeat
     slab = surface(marc, (0, 1, 0), layers=2, vacuum=12.0)
     slab = slab.repeat((2, 1, 2))
 
@@ -230,9 +263,15 @@ def run_gpaw_single_point(atoms, config_label, is_slab=False):
     else:
         kpts = (4, 4, 4)
 
-    # Marcasite FeS2: antiferromagnetic, Fe magmom=1.7 (Vaughan 2006)
-    magmoms = [1.7 if sym == 'Fe' else 0.0 for sym in atoms.get_chemical_symbols()]
-    atoms.set_initial_magnetic_moments(magmoms)
+    # Marcasite FeS2: antiferromagnetic.
+    # Slabs already have AFM magmoms propagated from build functions.
+    # Bulk configs need AFM set here.
+    existing_magmoms = atoms.get_initial_magnetic_moments()
+    if not np.any(existing_magmoms != 0):
+        set_afm_magmoms_bulk(atoms, mu=1.7)
+
+    # Gentler mixing for slabs (AFM + broken symmetry = harder SCF)
+    mix_beta = 0.03 if is_slab else 0.05
 
     calc = GPAW(
         mode=mode,
@@ -241,7 +280,7 @@ def run_gpaw_single_point(atoms, config_label, is_slab=False):
         occupations=FermiDirac(0.1),
         convergence={'energy': 1e-5},
         maxiter=500,
-        mixer=MixerDif(0.05, 5, 50),
+        mixer=MixerDif(mix_beta, 5, 50),
         parallel={'augment_grids': True},
         txt=f'/workspace/results/marcasite/{config_label}.txt',
     )
