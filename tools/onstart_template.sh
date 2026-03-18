@@ -26,6 +26,11 @@
 set -eo pipefail
 export TZ=Europe/Kyiv
 
+# CPU threading for GPAW (auto-detect cores)
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-$(nproc)}"
+export MKL_NUM_THREADS="${OMP_NUM_THREADS}"
+export OPENBLAS_NUM_THREADS="${OMP_NUM_THREADS}"
+
 RESULTS_DIR="/workspace/results"
 REPO_URL="https://github.com/exopoiesis/digital-twin.git"
 REPO_DIR="/workspace/digital-twin"

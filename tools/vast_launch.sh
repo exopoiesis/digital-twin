@@ -21,6 +21,31 @@
 set -uo pipefail
 export TZ=Europe/Kyiv
 
+# === GPU FFT (GPAW new API + CuPy) ===
+# GPAW_NEW=1 switches to new API with CuPyFFTPlans (GPU FFT).
+# WARNING: incompatible with Blackwell (RTX 5070 Ti, sm_120).
+# Works on: RTX 3060/3080/3090/4000 Ada (sm_86/89).
+# Default OFF — enable per-instance:
+#   export GPAW_NEW=1 GPAW_USE_GPUS=1
+export GPAW_NEW="${GPAW_NEW:-0}"
+export GPAW_USE_GPUS="${GPAW_USE_GPUS:-0}"
+
+# === CPU THREADING ===
+# PW + GPU (GPAW_NEW=1): OMP_NUM_THREADS=1 mandatory — GPU FFT replaces OMP.
+#   Source: gpaw/new/pw/builder.py:42 warns "OMP>1 in PW-mode is not useful!"
+# PW without GPU: OMP=nproc — FFTW + LAPACK benefit from threads.
+# FD mode (SolvationGPAW): OMP=nproc — grid operations are CPU-bound.
+if [ -z "${OMP_NUM_THREADS:-}" ]; then
+    if [ "${GPAW_NEW}" = "1" ]; then
+        export OMP_NUM_THREADS=1
+    else
+        export OMP_NUM_THREADS=$(nproc)
+    fi
+fi
+# Propagate to BLAS/LAPACK backends
+export MKL_NUM_THREADS="${OMP_NUM_THREADS}"
+export OPENBLAS_NUM_THREADS="${OMP_NUM_THREADS}"
+
 SCRIPT="$1"
 shift
 ARGS="$@"
@@ -97,7 +122,8 @@ echo "=========================================" | tee "$LOGFILE"
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Launching: python3 -u $SCRIPT $ARGS" | tee -a "$LOGFILE"
 echo "Host: $(hostname)" | tee -a "$LOGFILE"
 echo "RAM: $(free -m | awk '/Mem:/{print $2}')M total" | tee -a "$LOGFILE"
-echo "CPU: $(nproc) cores" | tee -a "$LOGFILE"
+echo "CPU: $(nproc) cores, OMP_NUM_THREADS=$OMP_NUM_THREADS" | tee -a "$LOGFILE"
+echo "GPU: GPAW_NEW=$GPAW_NEW, GPAW_USE_GPUS=$GPAW_USE_GPUS" | tee -a "$LOGFILE"
 echo "Lock: $LOCKFILE (PID $$)" | tee -a "$LOGFILE"
 echo "=========================================" | tee -a "$LOGFILE"
 
