@@ -81,6 +81,8 @@ else
 fi
 
 # === SIGNAL HANDLING ===
+PY_PID=""
+
 cleanup() {
     local exit_code=$?
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Script terminated with exit code: $exit_code" | tee -a "$LOGFILE"
@@ -111,9 +113,22 @@ cleanup() {
     rm -f "$LOCKFILE"
 }
 
+forward_sigterm() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] SIGTERM received, forwarding to PID=$PY_PID" >> "$LOGFILE"
+    if [ -n "$PY_PID" ]; then
+        kill -TERM "$PY_PID" 2>/dev/null
+        # Vast.ai gives only 10s total before SIGKILL -- wait up to 8s
+        for i in $(seq 1 8); do
+            kill -0 "$PY_PID" 2>/dev/null || break
+            sleep 1
+        done
+    fi
+    exit 143
+}
+
 trap cleanup EXIT
-trap 'echo "[$(date)] Received SIGTERM" >> "$LOGFILE"; exit 143' TERM
-trap 'echo "[$(date)] Received SIGINT" >> "$LOGFILE"; exit 130' INT
+trap forward_sigterm TERM
+trap 'echo "[$(date)] Received SIGINT" >> "$LOGFILE"; [ -n "$PY_PID" ] && kill -INT "$PY_PID" 2>/dev/null; exit 130' INT
 
 # === LAUNCH ===
 echo $$ > "$LOCKFILE"
@@ -127,8 +142,10 @@ echo "GPU: GPAW_NEW=$GPAW_NEW, GPAW_USE_GPUS=$GPAW_USE_GPUS" | tee -a "$LOGFILE"
 echo "Lock: $LOCKFILE (PID $$)" | tee -a "$LOGFILE"
 echo "=========================================" | tee -a "$LOGFILE"
 
-# Run python3 with SEPARATE stdout and stderr
-python3 -u "/workspace/$SCRIPT" $ARGS >> "$LOGFILE" 2>> "$ERRLOG"
+# Run python3 in background for signal forwarding
+python3 -u "/workspace/$SCRIPT" $ARGS >> "$LOGFILE" 2>> "$ERRLOG" &
+PY_PID=$!
+wait $PY_PID
 PY_EXIT=$?
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Python exited with code: $PY_EXIT" | tee -a "$LOGFILE"

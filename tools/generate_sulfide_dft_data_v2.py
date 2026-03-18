@@ -40,6 +40,7 @@ from ase.build import surface, add_adsorbate
 from ase.io import write, read
 from ase.spacegroup import crystal
 from gpaw import GPAW, PW, FermiDirac
+from gpaw_checkpoint import register_sigterm_handler, is_shutdown_requested
 
 
 def build_mackinawite() -> Atoms:
@@ -52,58 +53,76 @@ def build_mackinawite() -> Atoms:
     )
 
 
-def build_pentlandite() -> Atoms:
+def build_pentlandite(primitive=False) -> Atoms:
     """Build pentlandite (Fe,Ni)9S8 unit cell (Fm-3m, #225).
 
-    Wyckoff positions:
-      4a (0,0,0): Fe (tetrahedral metal site)
-      8c (1/4,1/4,1/4): Ni (octahedral metal site)
-      8c (0.385,0.385,0.385): S
+    Source: CIF AMCSD 0007705 (Tsukimura 1992).
 
-    Gives Fe4Ni8S8 (20 atoms). Real pentlandite is Fe4.5Ni4.5S8
-    with Fe/Ni disorder on 8c — ordered approximation is fine for
-    training data. We swap 3 Ni→Fe to get Fe7Ni5S8 (closer to real).
+    Wyckoff positions (conventional cell = 68 atoms = 4 x M9S8):
+      4b  (0.5, 0.5, 0.5):      Fe  (octahedral, Fe-rich: occ 0.986)
+      32f (0.125, 0.125, 0.125): M   (tetrahedral M8 cube, ~50/50 Fe/Ni)
+      8c  (0.25, 0.25, 0.25):   S1
+      24e (0.25, 0, 0):         S2
+
+    Primitive cell = 17 atoms = Fe5Ni4S8.
+    Conventional cell = 68 atoms = Fe20Ni16S32.
+
+    Args:
+        primitive: if True, return primitive cell (17 atoms, rhombohedral);
+                   if False, return conventional cell (68 atoms, cubic).
     """
     atoms = crystal(
-        symbols=['Fe', 'Ni', 'S'],
-        basis=[(0, 0, 0),              # 4a → 4 Fe
-               (0.25, 0.25, 0.25),     # 8c → 8 Ni
-               (0.385, 0.385, 0.385)], # 8c → 8 S
+        symbols=['Fe', 'Ni', 'S', 'S'],
+        basis=[(0.5, 0.5, 0.5),         # 4b  -> Fe (octahedral)
+               (0.125, 0.125, 0.125),    # 32f -> Ni (tetrahedral M8 cube)
+               (0.25, 0.25, 0.25),       # 8c  -> S1
+               (0.25, 0.0, 0.0)],        # 24e -> S2
         spacegroup=225,
         cellpar=[10.07, 10.07, 10.07, 90, 90, 90],
+        primitive_cell=primitive,
     )
-    # Swap 3 Ni → Fe on 8c sites to approximate Fe4.5Ni4.5S8
+    # 32f site starts as all Ni; swap half to Fe for ~50/50 occupancy.
+    # Conventional: 16 of 32 Ni -> Fe.  Primitive: 4 of 8 Ni -> Fe.
     syms = atoms.get_chemical_symbols()
     ni_indices = [i for i, s in enumerate(syms) if s == 'Ni']
-    for i in ni_indices[:3]:
+    n_swap = len(ni_indices) // 2
+    for i in ni_indices[:n_swap]:
         syms[i] = 'Fe'
     atoms.set_chemical_symbols(syms)
     return atoms
 
 
-def build_pentlandite_variant(n_swap: int, variant_name: str) -> Atoms:
-    """Build pentlandite with custom Fe/Ni ratio.
+def build_pentlandite_variant(n_extra_fe: int, variant_name: str) -> Atoms:
+    """Build pentlandite with custom Fe/Ni ratio (primitive cell, 17 atoms).
+
+    Base composition: Fe5Ni4S8 (1 Fe on 4b + 4 Fe swapped on 32f).
 
     Args:
-        n_swap: Number of Ni atoms to swap to Fe (on top of base 3)
-        variant_name: e.g., "Fe5Ni7" or "Fe3Ni9"
+        n_extra_fe: additional Ni->Fe swaps beyond base 4 on 32f site.
+            +1 -> Fe6Ni3S8, +2 -> Fe7Ni2S8, -1 -> Fe4Ni5S8, etc.
+        variant_name: e.g., "Fe6Ni3" or "Fe4Ni5"
 
     Returns:
-        Pentlandite with modified composition
+        Pentlandite primitive cell with modified composition (17 atoms).
     """
     atoms = crystal(
-        symbols=['Fe', 'Ni', 'S'],
-        basis=[(0, 0, 0),              # 4a → 4 Fe
-               (0.25, 0.25, 0.25),     # 8c → 8 Ni
-               (0.385, 0.385, 0.385)], # 8c → 8 S
+        symbols=['Fe', 'Ni', 'S', 'S'],
+        basis=[(0.5, 0.5, 0.5),         # 4b  -> Fe
+               (0.125, 0.125, 0.125),    # 32f -> Ni
+               (0.25, 0.25, 0.25),       # 8c  -> S1
+               (0.25, 0.0, 0.0)],        # 24e -> S2
         spacegroup=225,
         cellpar=[10.07, 10.07, 10.07, 90, 90, 90],
+        primitive_cell=True,
     )
 
     syms = atoms.get_chemical_symbols()
     ni_indices = [i for i, s in enumerate(syms) if s == 'Ni']
 
-    # Swap specified number of Ni → Fe
+    # Base: swap half of Ni -> Fe (4 of 8), then add extra
+    n_swap = len(ni_indices) // 2 + n_extra_fe
+    n_swap = max(0, min(n_swap, len(ni_indices)))
+
     for i in ni_indices[:n_swap]:
         syms[i] = 'Fe'
 
@@ -262,17 +281,14 @@ def build_mackinawite_surface_with_H() -> List[Tuple[Atoms, str]]:
 def build_pentlandite_surface() -> List[Tuple[Atoms, str]]:
     """Build pentlandite (001) surface slab and rattled variants.
 
-    Note: (001) for pentlandite (cubic Fm-3m, a=10.07Å) is easier to
-    construct than (111). Using 1x1x1 with 2 layers gives ~40 atoms.
+    Uses conventional cell (68 atoms) for proper cubic (001) surface.
+    1 layer + vacuum to keep atom count manageable (~68 atoms).
     """
-    pent = build_pentlandite()
+    pent = build_pentlandite(primitive=False)  # 68-atom conventional cell
 
-    # Build (001) surface with 2 layers + 10 Å vacuum
-    # Try 1x1 first to keep atom count manageable
-    slab = surface(pent, (0, 0, 1), layers=2, vacuum=10.0)
-
-    # If needed, can repeat (2, 2, 1) later, but let's try minimal first
-    # For now, use single cell (will be ~20 atoms with 2 layers)
+    # Build (001) surface with 1 layer + 12 A vacuum
+    # 1 layer of conventional cell = 68 atoms
+    slab = surface(pent, (0, 0, 1), layers=1, vacuum=12.0)
 
     configs = [(slab.copy(), "pentlandite_001_slab")]
 
@@ -287,8 +303,8 @@ def build_pentlandite_surface() -> List[Tuple[Atoms, str]]:
 
 def build_pentlandite_surface_with_H() -> List[Tuple[Atoms, str]]:
     """Build pentlandite (001) surface + H at 3 positions."""
-    pent = build_pentlandite()
-    slab = surface(pent, (0, 0, 1), layers=2, vacuum=10.0)
+    pent = build_pentlandite(primitive=False)  # 68-atom conventional cell
+    slab = surface(pent, (0, 0, 1), layers=1, vacuum=12.0)
 
     configs = []
 
@@ -400,7 +416,7 @@ def build_pyrite_surface_with_H() -> List[Tuple[Atoms, str]]:
 
 def build_pentlandite_H_path() -> List[Tuple[Atoms, str]]:
     """Build pentlandite H vacancy diffusion path snapshots (5 configs)."""
-    pent = build_pentlandite()
+    pent = build_pentlandite(primitive=True)  # 17-atom primitive cell
 
     configs = []
 
@@ -438,13 +454,13 @@ def run_gpaw_single_point(atoms: Atoms, config_label: str, is_slab: bool = False
     # GPAW settings matching q075-dft
     mode = PW(400) if is_slab else PW(500)
 
-    # K-points
-    if 'pentlandite' in config_label and 'slab' not in config_label:
-        kpts = (2, 2, 2)  # Large bulk cell
-    elif is_slab:
-        kpts = (2, 2, 1)  # Slab
+    # K-points: is_slab first (slabs always Gamma-only)
+    if is_slab:
+        kpts = (1, 1, 1)  # Slab (large cells with vacuum, Gamma-only)
+    elif 'pentlandite' in config_label:
+        kpts = (3, 3, 3)  # 17-atom primitive cell (~7.1 A vectors)
     else:
-        kpts = (4, 4, 4)  # Small bulk cells
+        kpts = (4, 4, 4)  # Small bulk cells (mackinawite, pyrite)
 
     calc = GPAW(
         mode=mode,
@@ -547,50 +563,54 @@ def generate_all_configs() -> List[Tuple[Atoms, str, bool]]:
     print(f"  Mackinawite: {len([c for c in configs if 'mackinawite' in c[1]])} configs", flush=True)
 
     # === PENTLANDITE ===
+    # Correct structure: CIF AMCSD 0007705 (Tsukimura 1992), Fm-3m #225.
+    # Primitive cell: 17 atoms (Fe5Ni4S8). Conventional: 68 atoms.
+    # Bulk configs use primitive cell (17 atoms) for efficiency.
+    # Surface configs use conventional cell (68 atoms) for proper (001) cut.
     print("Generating pentlandite configs...", flush=True)
-    pent = build_pentlandite()
+    pent = build_pentlandite(primitive=True)  # 17-atom primitive cell
 
     # Equilibrium
     configs.append((pent.copy(), "pentlandite_bulk_eq", False))
 
-    # Rattled (KEEP v1!)
+    # Rattled
     configs.extend([(a, l, False) for a, l in rattle_atoms(pent, 0.05, "pentlandite_bulk")])
     configs.extend([(a, l, False) for a, l in rattle_atoms(pent, 0.15, "pentlandite_bulk")])
 
-    # NEW: Additional rattle levels
+    # Additional rattle levels
     configs.extend([(a, l, False) for a, l in rattle_atoms_fixed_count(pent, 0.03, "pentlandite_bulk", 10)])
     configs.extend([(a, l, False) for a, l in rattle_atoms_fixed_count(pent, 0.08, "pentlandite_bulk", 10)])
     configs.extend([(a, l, False) for a, l in rattle_atoms_fixed_count(pent, 0.10, "pentlandite_bulk", 10)])
     configs.extend([(a, l, False) for a, l in rattle_atoms_fixed_count(pent, 0.20, "pentlandite_bulk", 10)])
 
-    # Strains (KEEP v1!)
+    # Strains
     configs.extend([(a, l, False) for a, l in strain_atoms(pent, "pentlandite_bulk")])
     configs.extend([(a, l, False) for a, l in shear_strain_atoms(pent, "pentlandite_bulk")])
 
-    # NEW: Extended strains
+    # Extended strains
     configs.extend([(a, l, False) for a, l in strain_atoms_extended(pent, "pentlandite_bulk")])
 
-    # H diffusion path (KEEP v1!)
+    # H diffusion path (primitive cell)
     configs.extend([(a, l, False) for a, l in build_pentlandite_H_path()])
 
-    # NEW: Pentlandite surfaces
+    # Pentlandite surfaces (conventional cell)
     configs.extend([(a, l, True) for a, l in build_pentlandite_surface()])
     configs.extend([(a, l, True) for a, l in build_pentlandite_surface_with_H()])
 
-    # NEW: Pentlandite composition variants
+    # Pentlandite composition variants (primitive cell, 17 atoms)
     print("  Generating pentlandite composition variants...", flush=True)
 
-    # Fe5Ni7S8 (swap 4 Ni→Fe total, vs 3 in base)
-    pent_fe5ni7 = build_pentlandite_variant(4, "Fe5Ni7")
-    configs.append((pent_fe5ni7.copy(), "pentlandite_Fe5Ni7_bulk_eq", False))
-    configs.extend([(a, l, False) for a, l in rattle_atoms_fixed_count(pent_fe5ni7, 0.05, "pentlandite_Fe5Ni7_bulk", 5)])
-    configs.extend([(a, l, False) for a, l in strain_atoms(pent_fe5ni7, "pentlandite_Fe5Ni7_bulk")])
+    # Fe6Ni3S8 (+1 extra Fe beyond base 4 on 32f)
+    pent_fe6ni3 = build_pentlandite_variant(+1, "Fe6Ni3")
+    configs.append((pent_fe6ni3.copy(), "pentlandite_Fe6Ni3_bulk_eq", False))
+    configs.extend([(a, l, False) for a, l in rattle_atoms_fixed_count(pent_fe6ni3, 0.05, "pentlandite_Fe6Ni3_bulk", 5)])
+    configs.extend([(a, l, False) for a, l in strain_atoms(pent_fe6ni3, "pentlandite_Fe6Ni3_bulk")])
 
-    # Fe3Ni9S8 (swap only 1 Ni→Fe, vs 3 in base)
-    pent_fe3ni9 = build_pentlandite_variant(1, "Fe3Ni9")
-    configs.append((pent_fe3ni9.copy(), "pentlandite_Fe3Ni9_bulk_eq", False))
-    configs.extend([(a, l, False) for a, l in rattle_atoms_fixed_count(pent_fe3ni9, 0.05, "pentlandite_Fe3Ni9_bulk", 5)])
-    configs.extend([(a, l, False) for a, l in strain_atoms(pent_fe3ni9, "pentlandite_Fe3Ni9_bulk")])
+    # Fe4Ni5S8 (-1: swap only 3 of 8 Ni->Fe on 32f)
+    pent_fe4ni5 = build_pentlandite_variant(-1, "Fe4Ni5")
+    configs.append((pent_fe4ni5.copy(), "pentlandite_Fe4Ni5_bulk_eq", False))
+    configs.extend([(a, l, False) for a, l in rattle_atoms_fixed_count(pent_fe4ni5, 0.05, "pentlandite_Fe4Ni5_bulk", 5)])
+    configs.extend([(a, l, False) for a, l in strain_atoms(pent_fe4ni5, "pentlandite_Fe4Ni5_bulk")])
 
     print(f"  Pentlandite: {len([c for c in configs if 'pentlandite' in c[1]])} configs", flush=True)
 
@@ -646,6 +666,8 @@ def main():
                         help='Total number of workers for splitting')
     args = parser.parse_args()
 
+    register_sigterm_handler()
+
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -682,6 +704,10 @@ def main():
     print(f"Starting DFT calculations ({n_total} configs)...\n", flush=True)
 
     for idx, (atoms, label, is_slab) in enumerate(all_configs, start=1):
+        if is_shutdown_requested():
+            print(f"\n[SIGTERM] Graceful shutdown after {n_success} configs. Resume with --resume.", flush=True)
+            break
+
         t0 = time.time()
 
         try:

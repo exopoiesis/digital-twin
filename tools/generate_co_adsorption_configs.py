@@ -30,6 +30,7 @@ from ase import Atoms
 from ase.build import surface, molecule
 from ase.io import write, read
 from ase.spacegroup import crystal
+from gpaw_checkpoint import register_sigterm_handler, is_shutdown_requested
 
 
 def build_pentlandite():
@@ -380,6 +381,8 @@ def main():
     parser.add_argument('--dry-run', action='store_true', help='Just count configs, no DFT')
     args = parser.parse_args()
 
+    register_sigterm_handler()
+
     configs = generate_all_configs()
 
     if args.dry_run:
@@ -404,6 +407,10 @@ def main():
     log_path = output_path.parent / 'co_ads_log.txt'
 
     for i, (atoms, label) in enumerate(remaining):
+        if is_shutdown_requested():
+            print(f"\n[SIGTERM] Graceful shutdown. Resume with --resume.", flush=True)
+            break
+
         t0 = time.time()
         try:
             results = run_gpaw_single_point(atoms, label)

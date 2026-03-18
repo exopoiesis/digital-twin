@@ -38,6 +38,9 @@ from ase.spacegroup import crystal
 
 from gpaw import FermiDirac
 from gpaw.solvation import SolvationGPAW, get_HW14_water_kwargs
+from gpaw_checkpoint import (
+    register_sigterm_handler, is_shutdown_requested, CheckpointManager
+)
 
 
 # ─── Configuration ───────────────────────────────────────────────────────────
@@ -174,7 +177,16 @@ def step_ref_slab(output_dir):
     print("=== ref_slab: relaxing slab in solvent ===", flush=True)
     t0 = time.time()
 
-    slab = build_mackinawite_slab()
+    # Resume from trajectory if available
+    traj_path = output_dir / 'ref_slab.traj'
+    if traj_path.exists():
+        try:
+            slab = read(str(traj_path), index=-1)
+            print(f"  Resumed geometry from {traj_path}", flush=True)
+        except Exception:
+            slab = build_mackinawite_slab()
+    else:
+        slab = build_mackinawite_slab()
 
     # Fix bottom layer (lowest 50% of atoms by z)
     z_mid = (slab.positions[:, 2].max() + slab.positions[:, 2].min()) / 2
@@ -185,7 +197,11 @@ def step_ref_slab(output_dir):
     calc = make_solvation_calc(KPTS_SLAB, txt=str(output_dir / 'ref_slab.txt'))
     slab.calc = calc
 
-    opt = BFGS(slab, trajectory=str(output_dir / 'ref_slab.traj'),
+    # Checkpoint manager: saves .gpw on SIGTERM + periodic (every 50 SCF iters)
+    ckpt = CheckpointManager(slab, output_dir / 'ref_slab_checkpoint.gpw', interval=5)
+    ckpt.attach_to_calc(calc)
+
+    opt = BFGS(slab, trajectory=str(traj_path),
                logfile=str(output_dir / 'ref_slab_bfgs.log'))
     opt.run(fmax=FMAX, steps=MAX_STEPS_REF)
 
@@ -217,11 +233,25 @@ def step_ref_formate(output_dir):
     print("=== ref_formate: formate in solvent ===", flush=True)
     t0 = time.time()
 
-    formate = build_formate_in_box()
+    # Resume from trajectory if available
+    traj_path = output_dir / 'ref_formate.traj'
+    if traj_path.exists():
+        try:
+            formate = read(str(traj_path), index=-1)
+            formate.pbc = True
+            print(f"  Resumed geometry from {traj_path}", flush=True)
+        except Exception:
+            formate = build_formate_in_box()
+    else:
+        formate = build_formate_in_box()
+
     calc = make_solvation_calc(KPTS_MOL, txt=str(output_dir / 'ref_formate.txt'))
     formate.calc = calc
 
-    opt = BFGS(formate, trajectory=str(output_dir / 'ref_formate.traj'),
+    ckpt = CheckpointManager(formate, output_dir / 'ref_formate_checkpoint.gpw', interval=5)
+    ckpt.attach_to_calc(calc)
+
+    opt = BFGS(formate, trajectory=str(traj_path),
                logfile=str(output_dir / 'ref_formate_bfgs.log'))
     opt.run(fmax=FMAX, steps=MAX_STEPS_REF)
 
@@ -266,7 +296,11 @@ def step_site(site_name, output_dir):
     calc = make_solvation_calc(KPTS_SLAB, txt=str(output_dir / f'{prefix}.txt'))
     combined.calc = calc
 
-    opt = BFGS(combined, trajectory=str(output_dir / f'{prefix}.traj'),
+    ckpt = CheckpointManager(combined, output_dir / f'{prefix}_checkpoint.gpw', interval=5)
+    ckpt.attach_to_calc(calc)
+
+    traj_path = output_dir / f'{prefix}.traj'
+    opt = BFGS(combined, trajectory=str(traj_path),
                logfile=str(output_dir / f'{prefix}_bfgs.log'))
     opt.run(fmax=FMAX, steps=MAX_STEPS_SITE)
 
@@ -419,6 +453,8 @@ def main():
                         help='Output directory for results')
     args = parser.parse_args()
 
+    register_sigterm_handler()
+
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -434,6 +470,10 @@ def main():
     print(f"  Solvation: HW14 water (eps=78.36)\n", flush=True)
 
     for step_name in steps:
+        if is_shutdown_requested():
+            print(f"  SIGTERM received, stopping before {step_name}", flush=True)
+            break
+
         if step_name not in STEP_MAP:
             print(f"  Unknown step: {step_name}", flush=True)
             continue
@@ -446,8 +486,12 @@ def main():
 
         try:
             STEP_MAP[step_name](output_dir)
+        except SystemExit:
+            # Raised by CheckpointManager on SIGTERM during SCF
+            print(f"  {step_name}: checkpoint saved, exiting", flush=True)
+            raise
         except Exception as e:
-            print(f"  {step_name}: FAILED — {e}", flush=True)
+            print(f"  {step_name}: FAILED -- {e}", flush=True)
             traceback.print_exc()
             # Save error
             save_json(output_dir / f'{step_name}_error.json', {
