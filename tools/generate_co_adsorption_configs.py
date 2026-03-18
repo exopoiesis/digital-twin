@@ -5,10 +5,14 @@ Generate DFT training data for CO adsorption on sulfide surfaces (Tier 2E).
 CO is the primary CO2RR product on pentlandite (Tetzlaff 2021).
 Important for electrocatalysis community.
 
-Config breakdown (~10 configs):
-  Pentlandite (111) + CO (3 sites × 2 orient):  6
-  Greigite (111) + CO (2 sites × 2 orient):     4
-  TOTAL:                                        10
+Config breakdown (~18 configs, after min_distance filtering):
+  Pentlandite (111) + CO (3 sites × 2 orient):   up to 6
+  Mackinawite (001) + CO (3 sites × 2 orient):   up to 6
+  Greigite (001) + CO (3 sites × 2 orient):      up to 6
+  TOTAL:                                          up to 18
+
+Note: greigite built with deduplicated bulk (ASE spacegroup 227
+      generates S-atom duplicates at 0.11 Å due to u=0.254 ≈ 0.25).
 
 Usage:
     python -u generate_co_adsorption_configs.py --output /workspace/results/co_ads_train.xyz
@@ -42,13 +46,30 @@ def build_pentlandite():
     )
 
 
-def build_greigite_conventional():
+def build_mackinawite():
+    """Build mackinawite FeS unit cell (P4/nmm, #129)."""
+    return crystal(
+        symbols=['Fe', 'S'],
+        basis=[(0, 0, 0), (0, 0.5, 0.2602)],
+        spacegroup=129,
+        cellpar=[3.674, 3.674, 5.033, 90, 90, 90],
+    )
+
+
+def build_greigite():
+    """Build greigite Fe3S4 (Fd-3m, #227).
+
+    Inverse spinel: Fe_tet(8a) + Fe_oct(16d) + S(32e).
+    a = 9.876 Å, S parameter u = 0.380 in setting 1 (ASE default).
+    NOTE: u=0.254 is for setting 2 -- using it in setting 1 produces
+    S-S overlaps at 0.11 Å. This was the root cause of the greigite bug.
+    """
     return crystal(
         symbols=['Fe', 'Fe', 'S'],
         basis=[
             (0.125, 0.125, 0.125),
             (0.5, 0.5, 0.5),
-            (0.254, 0.254, 0.254),
+            (0.380, 0.380, 0.380),
         ],
         spacegroup=227,
         cellpar=[9.876, 9.876, 9.876, 90, 90, 90],
@@ -66,7 +87,7 @@ def make_co():
 def check_min_distance(atoms, min_dist=1.2, adsorbate_sizes=None):
     """Check if any two atoms are closer than min_dist (Å).
 
-    adsorbate_sizes: list of ints — sizes of adsorbate molecules appended
+    adsorbate_sizes: list of ints -- sizes of adsorbate molecules appended
                      at the end of atoms. Intra-molecular distances within
                      each adsorbate are excluded from the check.
                      Example: [2] for CO, [3] for CO2, [1, 3] for H + CO2.
@@ -131,13 +152,14 @@ def place_co_on_site(slab, site_pos, orientation='C_down', height=2.2):
     else:
         ok, min_d = check_min_distance(result, adsorbate_sizes=[2])
         if not ok:
-            print(f"    ERROR: still too close ({min_d:.2f} Å) after 5 attempts!", flush=True)
+            print(f"    SKIP: still too close ({min_d:.2f} Å) after 5 attempts -- dropping config", flush=True)
+            return None
 
     return result
 
 
 def generate_co_on_pentlandite():
-    """CO on pentlandite (111) — 6 configs."""
+    """CO on pentlandite (111) -- 6 configs."""
     configs = []
     pent = build_pentlandite()
     slab = surface(pent, (1, 1, 1), layers=2, vacuum=15.0)
@@ -166,16 +188,22 @@ def generate_co_on_pentlandite():
     for site_name, site_pos in sites.items():
         for orient in ['C_down', 'O_down']:
             s = place_co_on_site(slab, site_pos, orientation=orient, height=2.2)
-            configs.append((s, f"pent_111_CO_{site_name}_{orient}"))
+            if s is not None:
+                configs.append((s, f"pent_111_CO_{site_name}_{orient}"))
 
     return configs
 
 
-def generate_co_on_greigite():
-    """CO on greigite (111) — 4 configs."""
+def generate_co_on_mackinawite():
+    """CO on mackinawite (001) -- up to 6 configs.
+
+    Mackinawite is the actual CO2RR catalyst in our system (R1).
+    Layered FeS, P4/nmm. (001) is the basal plane.
+    """
     configs = []
-    greig = build_greigite_conventional()
-    slab = surface(greig, (1, 1, 1), layers=2, vacuum=15.0)
+    mack = build_mackinawite()
+    slab = surface(mack, (0, 0, 1), layers=2, vacuum=15.0)
+    slab = slab.repeat((2, 2, 1))  # 2x2 supercell for enough room
 
     syms = np.array(slab.get_chemical_symbols())
     fe_mask = syms == 'Fe'
@@ -188,17 +216,69 @@ def generate_co_on_greigite():
         return configs
 
     top_fe = fe_pos[np.argmax(fe_pos[:, 2])]
+    # Second Fe for bridge site
+    fe_top_sorted = fe_pos[np.argsort(-fe_pos[:, 2])]
+    top_fe2 = fe_top_sorted[1] if len(fe_top_sorted) > 1 else top_fe
     top_s = s_pos[np.argmax(s_pos[:, 2])]
 
     sites = {
         'top_Fe': top_fe,
-        'bridge_FeS': (top_fe + top_s) / 2,
+        'bridge_FeFe': (top_fe + top_fe2) / 2,
+        'hollow_FeS': (top_fe + top_s) / 2,
     }
 
     for site_name, site_pos in sites.items():
         for orient in ['C_down', 'O_down']:
             s = place_co_on_site(slab, site_pos, orientation=orient, height=2.2)
-            configs.append((s, f"greigite_111_CO_{site_name}_{orient}"))
+            if s is not None:
+                configs.append((s, f"mack_001_CO_{site_name}_{orient}"))
+
+    return configs
+
+
+def generate_co_on_greigite():
+    """CO on greigite (001) -- up to 6 configs.
+
+    Greigite Fe3S4: inverse spinel, Fd-3m.
+    Built with deduplication to fix ASE 0.11 Å S-atom overlaps.
+    Uses (001) surface (not (111) which is also problematic after dedup).
+    """
+    configs = []
+    greig = build_greigite()
+    slab = surface(greig, (0, 0, 1), layers=2, vacuum=15.0)
+
+    # Verify slab is clean
+    ok, min_d = check_min_distance(slab)
+    if not ok:
+        print(f"    SKIP greigite (001): slab min_dist {min_d:.3f} Å -- bad geometry", flush=True)
+        return configs
+
+    syms = np.array(slab.get_chemical_symbols())
+    fe_mask = syms == 'Fe'
+    s_mask = syms == 'S'
+
+    fe_pos = slab.positions[fe_mask]
+    s_pos = slab.positions[s_mask]
+
+    if len(fe_pos) == 0:
+        return configs
+
+    top_fe = fe_pos[np.argmax(fe_pos[:, 2])]
+    fe_top_sorted = fe_pos[np.argsort(-fe_pos[:, 2])]
+    top_fe2 = fe_top_sorted[1] if len(fe_top_sorted) > 1 else top_fe
+    top_s = s_pos[np.argmax(s_pos[:, 2])]
+
+    sites = {
+        'top_Fe': top_fe,
+        'bridge_FeFe': (top_fe + top_fe2) / 2,
+        'hollow_FeS': (top_fe + top_s) / 2,
+    }
+
+    for site_name, site_pos in sites.items():
+        for orient in ['C_down', 'O_down']:
+            s = place_co_on_site(slab, site_pos, orientation=orient, height=2.2)
+            if s is not None:
+                configs.append((s, f"greigite_001_CO_{site_name}_{orient}"))
 
     return configs
 
@@ -215,7 +295,12 @@ def generate_all_configs():
     configs.extend(cfgs)
     print(f"  {len(cfgs)} configs", flush=True)
 
-    print("--- Greigite (111) + CO ---", flush=True)
+    print("--- Mackinawite (001) + CO ---", flush=True)
+    cfgs = generate_co_on_mackinawite()
+    configs.extend(cfgs)
+    print(f"  {len(cfgs)} configs", flush=True)
+
+    print("--- Greigite (001) + CO ---", flush=True)
     cfgs = generate_co_on_greigite()
     configs.extend(cfgs)
     print(f"  {len(cfgs)} configs", flush=True)
@@ -278,7 +363,7 @@ def main():
     configs = generate_all_configs()
 
     if args.dry_run:
-        print("\nDRY RUN — config list:")
+        print("\nDRY RUN -- config list:")
         for atoms, label in configs:
             elements = sorted(set(atoms.get_chemical_symbols()))
             print(f"  {label}: {len(atoms)} atoms, elements={elements}")
@@ -312,7 +397,7 @@ def main():
             with open(log_path, 'a') as f:
                 f.write(msg + '\n')
         except Exception as e:
-            msg = f"[{i+1}/{len(remaining)}] {label}: FAILED — {e}"
+            msg = f"[{i+1}/{len(remaining)}] {label}: FAILED -- {e}"
             print(msg, flush=True)
             with open(log_path, 'a') as f:
                 f.write(msg + '\n')
