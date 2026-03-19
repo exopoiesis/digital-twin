@@ -23,6 +23,10 @@ Usage:
     python -u generate_greigite_configs.py --output /workspace/results/greigite_train.xyz
     python -u generate_greigite_configs.py --output /workspace/results/greigite_train.xyz --resume
     python -u generate_greigite_configs.py --dry-run  # Just count configs, no DFT
+
+Parallel (2 workers):
+    Worker 0: python -u generate_greigite_configs.py --worker-id 0 --num-workers 2 --resume
+    Worker 1: python -u generate_greigite_configs.py --worker-id 1 --num-workers 2 --resume
 """
 
 import argparse
@@ -406,11 +410,20 @@ def main():
     parser.add_argument('--output', type=str, default='/workspace/results/greigite_train.xyz')
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--dry-run', action='store_true', help='Just count configs, no DFT')
+    parser.add_argument('--worker-id', type=int, default=0, help='Worker index (0-based)')
+    parser.add_argument('--num-workers', type=int, default=1, help='Total number of workers')
     args = parser.parse_args()
 
     register_sigterm_handler()
 
     configs = generate_all_configs()
+
+    # Split across workers (deterministic modulo on full list)
+    if args.num_workers > 1:
+        all_count = len(configs)
+        configs = [c for i, c in enumerate(configs) if i % args.num_workers == args.worker_id]
+        print(f"Worker {args.worker_id}/{args.num_workers}: "
+              f"{len(configs)}/{all_count} configs assigned\n", flush=True)
 
     if args.dry_run:
         print("\nDRY RUN --config list:")
