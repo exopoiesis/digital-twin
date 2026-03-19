@@ -115,9 +115,9 @@ def place_formate_on_slab(slab, site_name):
         # Hollow site — center of Fe triangle
         fe_mask = symbols == 'Fe'
         fe_pos = slab.positions[fe_mask]
-        # Top layer Fe atoms (within 1 Å of max z)
-        top_fe = fe_pos[fe_pos[:, 2] > z_max - 1.5]
-        anchor = top_fe[:3].mean(axis=0)  # center of first 3
+        # Top 3 Fe atoms by z-coordinate (surface layer)
+        top_indices = np.argsort(fe_pos[:, 2])[-3:]
+        anchor = fe_pos[top_indices].mean(axis=0)
         anchor[2] = z_max + 2.5
 
     else:
