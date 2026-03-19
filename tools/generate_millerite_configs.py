@@ -7,8 +7,8 @@ Millerite is a pure nickel sulfide important for serpentinization
 
 Structure: each Ni is square-pyramidal coordinated by 5 S.
 a = 9.616 Å, c = 3.143 Å (hexagonal setting).
-Ni at 9b: (0.083, 0.917, 0.25) [approx]
-S  at 9b: (0.375, 0.625, 0.25) [approx]
+Ni at 9b: (0.508495, 0.754248, 0.151136) [Materials Project mp-1547]
+S  at 9b: (0.776145, 0.888073, 0.007339) [Materials Project mp-1547]
 
 Config breakdown (~39 configs):
   Bulk eq + rattles (σ=0.03-0.20):   16
@@ -34,23 +34,23 @@ from ase import Atoms
 from ase.build import surface
 from ase.io import write, read
 from ase.spacegroup import crystal
-from gpaw_checkpoint import register_sigterm_handler, is_shutdown_requested
 
 
 def build_millerite():
     """Build millerite NiS (R3m, #160, hexagonal setting).
 
     Experimental: a = 9.616 Å, c = 3.143 Å
-    Ni at (0.0829, 0.9171, 0.25) — 9b site
-    S  at (0.3748, 0.6252, 0.25) — 9b site
+    Ni at (0.0829, 0.9171, 0.25) -- 9b site
+    S  at (0.3748, 0.6252, 0.25) -- 9b site
 
     Hexagonal cell contains 9 NiS formula units = 18 atoms.
     """
+    # Coordinates from Materials Project mp-1547 (validated: min Ni-S = 2.266 A)
     atoms = crystal(
         symbols=['Ni', 'S'],
         basis=[
-            (0.0829, 0.9171, 0.25),
-            (0.3748, 0.6252, 0.25),
+            (0.508495, 0.754248, 0.151136),
+            (0.776145, 0.888073, 0.007339),
         ],
         spacegroup=160,
         cellpar=[9.616, 9.616, 3.143, 90, 90, 120],
@@ -61,11 +61,12 @@ def build_millerite():
 
 def build_millerite_primitive():
     """Build primitive millerite cell (6 atoms, rhombohedral)."""
+    # Coordinates from Materials Project mp-1547
     atoms = crystal(
         symbols=['Ni', 'S'],
         basis=[
-            (0.0829, 0.9171, 0.25),
-            (0.3748, 0.6252, 0.25),
+            (0.508495, 0.754248, 0.151136),
+            (0.776145, 0.888073, 0.007339),
         ],
         spacegroup=160,
         cellpar=[9.616, 9.616, 3.143, 90, 90, 120],
@@ -121,7 +122,7 @@ def generate_all_configs():
     n_bulk = len(configs)
     print(f"  Bulk configs: {n_bulk}", flush=True)
 
-    # (001) slab — basal plane, layered termination
+    # (001) slab -- basal plane, layered termination
     print("\n  Building (001) surface...", flush=True)
     slab_001 = surface(mill, (0, 0, 1), layers=2, vacuum=12.0)
     configs.append((slab_001.copy(), "millerite_001_slab", True))
@@ -131,7 +132,7 @@ def generate_all_configs():
         configs.append((rattled, f"millerite_001_slab_rattle_{i:02d}", True))
     print(f"  (001) slab: {len(slab_001)} atoms", flush=True)
 
-    # (100) slab — side face
+    # (100) slab -- side face
     print("  Building (100) surface...", flush=True)
     slab_100 = surface(mill, (1, 0, 0), layers=2, vacuum=12.0)
     configs.append((slab_100.copy(), "millerite_100_slab", True))
@@ -253,12 +254,10 @@ def main():
     parser.add_argument('--dry-run', action='store_true', help='Just count configs, no DFT')
     args = parser.parse_args()
 
-    register_sigterm_handler()
-
     configs = generate_all_configs()
 
     if args.dry_run:
-        print("\nDRY RUN — config list:")
+        print("\nDRY RUN -- config list:")
         for atoms, label, is_slab in configs:
             slab_tag = " [SLAB]" if is_slab else ""
             print(f"  {label}: {len(atoms)} atoms{slab_tag}")
@@ -279,10 +278,6 @@ def main():
     log_path = output_path.parent / 'millerite_log.txt'
 
     for i, (atoms, label, is_slab) in enumerate(remaining):
-        if is_shutdown_requested():
-            print(f"\n[SIGTERM] Graceful shutdown. Resume with --resume.", flush=True)
-            break
-
         t0 = time.time()
         try:
             results = run_gpaw_single_point(atoms, label, is_slab)
@@ -296,7 +291,7 @@ def main():
             with open(log_path, 'a') as f:
                 f.write(msg + '\n')
         except Exception as e:
-            msg = f"[{i+1}/{len(remaining)}] {label}: FAILED — {e}"
+            msg = f"[{i+1}/{len(remaining)}] {label}: FAILED -- {e}"
             print(msg, flush=True)
             with open(log_path, 'a') as f:
                 f.write(msg + '\n')

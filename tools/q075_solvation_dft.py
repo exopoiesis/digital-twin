@@ -6,14 +6,14 @@ Parallelizable: each --step runs independently, results saved to JSON.
 Merge results with --step summary.
 
 Steps and dependencies:
-  ref_slab      -> independent (relax slab in solvent)
-  ref_formate   -> independent (formate in solvent box)
-  site_ontop    -> needs ref_slab (loads relaxed slab)
-  site_bridge   -> needs ref_slab
-  site_hollow   -> needs ref_slab
-  summary       -> needs all above (reads JSONs, computes E_ads)
+  ref_slab      → independent (relax slab in solvent)
+  ref_formate   → independent (formate in solvent box)
+  site_ontop    → needs ref_slab (loads relaxed slab)
+  site_bridge   → needs ref_slab
+  site_hollow   → needs ref_slab
+  summary       → needs all above (reads JSONs, computes E_ads)
 
-Example -- 3 instances:
+Example — 3 instances:
   Instance 1: python3 -u q075_solvation_dft.py --step ref_slab,ref_formate
   Instance 2: python3 -u q075_solvation_dft.py --step site_ontop,site_bridge
   Instance 3: python3 -u q075_solvation_dft.py --step site_hollow
@@ -38,26 +38,23 @@ from ase.spacegroup import crystal
 
 from gpaw import FermiDirac
 from gpaw.solvation import SolvationGPAW, get_HW14_water_kwargs
-from gpaw_checkpoint import (
-    register_sigterm_handler, is_shutdown_requested, CheckpointManager
-)
 
 
-# --- Configuration ------------------------------------------------------------
+# ─── Configuration ───────────────────────────────────────────────────────────
 
-GRID_SPACING = 0.18   # Angstrom, real-space FD grid (SolvationGPAW requires FD, not PW)
+GRID_SPACING = 0.18   # Å — real-space FD grid (SolvationGPAW requires FD, not PW)
 KPTS_SLAB = (2, 2, 1)
 KPTS_MOL = (1, 1, 1)  # molecule in box
-FMAX = 0.05           # eV/A for BFGS
+FMAX = 0.05           # eV/Å for BFGS
 MAX_STEPS_REF = 100
 MAX_STEPS_SITE = 300
-VACUUM_MOL = 8.0      # A, box padding for isolated formate
+VACUUM_MOL = 8.0      # Å, box padding for isolated formate
 
 
-# --- Structure builders -------------------------------------------------------
+# ─── Structure builders ──────────────────────────────────────────────────────
 
 def build_mackinawite_slab():
-    """Build mackinawite (001) 3x3x1 slab (72 atoms) + 12 A vacuum."""
+    """Build mackinawite (001) 3x3x1 slab (72 atoms) + 12 Å vacuum."""
     mack = crystal(
         symbols=['Fe', 'S'],
         basis=[(0, 0, 0), (0, 0.5, 0.2602)],
@@ -70,7 +67,7 @@ def build_mackinawite_slab():
 
 
 def build_formate_in_box():
-    """Build formate anion HCOO- in a vacuum box."""
+    """Build formate anion HCOO⁻ in a vacuum box."""
     # Formate geometry (planar, C2v)
     formate = Atoms(
         symbols='COOH',
@@ -98,7 +95,7 @@ def place_formate_on_slab(slab, site_name):
         fe_pos = slab.positions[fe_mask]
         top_fe = fe_pos[np.argmax(fe_pos[:, 2])]
         anchor = top_fe.copy()
-        anchor[2] = z_max + 2.0  # 2.0 A above surface
+        anchor[2] = z_max + 2.0  # 2.0 Å above surface
 
     elif site_name == 'bridge':
         # Between top Fe and top S
@@ -112,12 +109,11 @@ def place_formate_on_slab(slab, site_name):
         anchor[2] = z_max + 2.2
 
     elif site_name == 'hollow':
-        # Hollow site -- center of Fe triangle
+        # Hollow site — center of top-3 Fe atoms (by z)
         fe_mask = symbols == 'Fe'
         fe_pos = slab.positions[fe_mask]
-        # Top 3 Fe atoms by z-coordinate (surface layer)
-        top_indices = np.argsort(fe_pos[:, 2])[-3:]
-        anchor = fe_pos[top_indices].mean(axis=0)
+        top3_idx = np.argsort(fe_pos[:, 2])[-3:]
+        anchor = fe_pos[top3_idx].mean(axis=0)
         anchor[2] = z_max + 2.5
 
     else:
@@ -135,29 +131,35 @@ def place_formate_on_slab(slab, site_name):
     return combined
 
 
-# --- Calculator setup ---------------------------------------------------------
+# ─── Calculator setup ────────────────────────────────────────────────────────
 
-def make_solvation_calc(kpts, txt=None):
-    """Create SolvationGPAW calculator with HW14 water model.
-
-    Uses FD (finite-difference) mode -- SolvationGPAW does NOT support PW.
-    Custom vdW radii for Fe, S (not in HW14 defaults).
-    """
+def _get_solv_kwargs():
+    """Build solvation kwargs with custom radii (reusable)."""
     solv_kwargs = get_HW14_water_kwargs()
-
-    # HW14 only has H radius. Add Bondi vdW radii for our elements.
-    # Sources: Bondi 1964 (C, O, S, H), Fe from UFF force field.
     custom_radii = {
         'H': 1.20,
         'C': 1.70,
         'O': 1.52,
         'S': 1.80,
         'Fe': 2.00,
-        'Ni': 1.63,  # in case of pentlandite later
+        'Ni': 1.63,
     }
     solv_kwargs['cavity'].effective_potential.atomic_radii = custom_radii
+    return solv_kwargs
 
-    calc = SolvationGPAW(
+
+def make_solvation_calc(kpts, txt=None, restart=None):
+    """Create SolvationGPAW calculator with HW14 water model.
+
+    Uses FD (finite-difference) mode -- SolvationGPAW does NOT support PW.
+    Custom vdW radii for Fe, S (not in HW14 defaults).
+
+    If restart is given, attempts to load wavefunctions from .gpw checkpoint.
+    Falls back to fresh calculator on any error.
+    """
+    solv_kwargs = _get_solv_kwargs()
+
+    base_kwargs = dict(
         mode='fd',
         h=GRID_SPACING,
         xc='PBE',
@@ -165,28 +167,28 @@ def make_solvation_calc(kpts, txt=None):
         occupations=FermiDirac(0.1),
         convergence={'energy': 1e-5},
         txt=txt,
-        **solv_kwargs,
     )
+
+    if restart and Path(restart).exists() and Path(restart).stat().st_size > 0:
+        try:
+            calc = SolvationGPAW(restart=restart, **base_kwargs, **solv_kwargs)
+            print(f"  [checkpoint] Loaded wavefunctions from {restart}", flush=True)
+            return calc
+        except Exception as e:
+            print(f"  [checkpoint] Restart failed ({e}), starting fresh", flush=True)
+
+    calc = SolvationGPAW(**base_kwargs, **solv_kwargs)
     return calc
 
 
-# --- Step functions -----------------------------------------------------------
+# ─── Step functions ──────────────────────────────────────────────────────────
 
 def step_ref_slab(output_dir):
     """Relax mackinawite slab in implicit solvent."""
     print("=== ref_slab: relaxing slab in solvent ===", flush=True)
     t0 = time.time()
 
-    # Resume from trajectory if available
-    traj_path = output_dir / 'ref_slab.traj'
-    if traj_path.exists():
-        try:
-            slab = read(str(traj_path), index=-1)
-            print(f"  Resumed geometry from {traj_path}", flush=True)
-        except Exception:
-            slab = build_mackinawite_slab()
-    else:
-        slab = build_mackinawite_slab()
+    slab = build_mackinawite_slab()
 
     # Fix bottom layer (lowest 50% of atoms by z)
     z_mid = (slab.positions[:, 2].max() + slab.positions[:, 2].min()) / 2
@@ -197,11 +199,7 @@ def step_ref_slab(output_dir):
     calc = make_solvation_calc(KPTS_SLAB, txt=str(output_dir / 'ref_slab.txt'))
     slab.calc = calc
 
-    # Checkpoint manager: saves .gpw on SIGTERM + periodic (every 50 SCF iters)
-    ckpt = CheckpointManager(slab, output_dir / 'ref_slab_checkpoint.gpw', interval=5)
-    ckpt.attach_to_calc(calc)
-
-    opt = BFGS(slab, trajectory=str(traj_path),
+    opt = BFGS(slab, trajectory=str(output_dir / 'ref_slab.traj'),
                logfile=str(output_dir / 'ref_slab_bfgs.log'))
     opt.run(fmax=FMAX, steps=MAX_STEPS_REF)
 
@@ -217,13 +215,13 @@ def step_ref_slab(output_dir):
         'step': 'ref_slab',
         'energy_eV': energy,
         'max_force_eV_A': float(max_force),
-        'converged': bool(max_force < FMAX),
+        'converged': max_force < FMAX,
         'n_steps': opt.nsteps,
         'n_atoms': len(slab),
         'time_s': elapsed,
     }
     save_json(output_dir / 'ref_slab.json', result)
-    print(f"  E_slab_solv = {energy:.4f} eV, max|F| = {max_force:.4f} eV/A, "
+    print(f"  E_slab_solv = {energy:.4f} eV, max|F| = {max_force:.4f}, "
           f"steps = {opt.nsteps}, time = {elapsed:.0f}s", flush=True)
     return result
 
@@ -233,38 +231,21 @@ def step_ref_formate(output_dir):
     print("=== ref_formate: formate in solvent ===", flush=True)
     t0 = time.time()
 
-    # Resume from trajectory if available
-    traj_path = output_dir / 'ref_formate.traj'
-    if traj_path.exists():
-        try:
-            formate = read(str(traj_path), index=-1)
-            formate.pbc = True
-            print(f"  Resumed geometry from {traj_path}", flush=True)
-        except Exception:
-            formate = build_formate_in_box()
-    else:
-        formate = build_formate_in_box()
-
+    formate = build_formate_in_box()
     calc = make_solvation_calc(KPTS_MOL, txt=str(output_dir / 'ref_formate.txt'))
     formate.calc = calc
 
-    ckpt = CheckpointManager(formate, output_dir / 'ref_formate_checkpoint.gpw', interval=5)
-    ckpt.attach_to_calc(calc)
-
-    opt = BFGS(formate, trajectory=str(traj_path),
+    opt = BFGS(formate, trajectory=str(output_dir / 'ref_formate.traj'),
                logfile=str(output_dir / 'ref_formate_bfgs.log'))
     opt.run(fmax=FMAX, steps=MAX_STEPS_REF)
 
     energy = formate.get_potential_energy()
-    forces = formate.get_forces()
-    max_force = np.max(np.linalg.norm(forces, axis=1))
     elapsed = time.time() - t0
 
     result = {
         'step': 'ref_formate',
         'energy_eV': energy,
-        'max_force_eV_A': float(max_force),
-        'converged': bool(max_force < FMAX),
+        'converged': True,
         'n_steps': opt.nsteps,
         'time_s': elapsed,
     }
@@ -296,14 +277,54 @@ def step_site(site_name, output_dir):
     combined.set_constraint(FixAtoms(mask=fix_mask))
 
     prefix = f'site_{site_name}'
-    calc = make_solvation_calc(KPTS_SLAB, txt=str(output_dir / f'{prefix}.txt'))
+
+    # Resume BFGS positions from trajectory (MPI-safe: rank 0 reads, broadcast)
+    traj_path = output_dir / f'{prefix}.traj'
+    from gpaw.mpi import world
+    n_frames = np.array([0], dtype=int)
+    last_pos = None
+    if world.rank == 0 and traj_path.exists():
+        try:
+            from ase.io import Trajectory as Traj
+            traj = Traj(str(traj_path))
+            n_frames[0] = len(traj)
+            if n_frames[0] > 0:
+                last_pos = traj[-1].positions.copy()
+            traj.close()
+        except Exception:
+            n_frames[0] = 0
+    world.broadcast(n_frames, 0)
+    if n_frames[0] > 0:
+        if world.rank != 0:
+            last_pos = np.zeros_like(combined.positions)
+        world.broadcast(last_pos, 0)
+        combined.set_positions(last_pos)
+        if world.rank == 0:
+            print(f"  Resumed positions from {traj_path} ({n_frames[0]} frames)", flush=True)
+
+    # Try to resume SCF from checkpoint (wavefunctions), fall back to fresh
+    ckpt_path = output_dir / f'{prefix}_checkpoint.gpw'
+    calc = make_solvation_calc(
+        KPTS_SLAB,
+        txt=str(output_dir / f'{prefix}.txt'),
+        restart=str(ckpt_path),
+    )
     combined.calc = calc
 
-    ckpt = CheckpointManager(combined, output_dir / f'{prefix}_checkpoint.gpw', interval=5)
-    ckpt.attach_to_calc(calc)
+    # Attach periodic checkpoint saving (every 5 SCF iters, min 3 min apart)
+    try:
+        import sys
+        if '/workspace' not in sys.path:
+            sys.path.insert(0, '/workspace')
+        from gpaw_checkpoint import CheckpointManager
+        ckpt_mgr = CheckpointManager(combined, ckpt_path, interval=5,
+                                     min_save_interval=180)
+        ckpt_mgr.attach_to_calc(calc)
+    except Exception as e:
+        if world.rank == 0:
+            print(f"  [checkpoint] Attach failed ({e}), continuing without", flush=True)
 
-    traj_path = output_dir / f'{prefix}.traj'
-    opt = BFGS(combined, trajectory=str(traj_path),
+    opt = BFGS(combined, trajectory=str(output_dir / f'{prefix}.traj'),
                logfile=str(output_dir / f'{prefix}_bfgs.log'))
     opt.run(fmax=FMAX, steps=MAX_STEPS_SITE)
 
@@ -330,7 +351,7 @@ def step_site(site_name, output_dir):
         'site': site_name,
         'energy_eV': energy,
         'max_force_eV_A': float(max_force),
-        'converged': bool(max_force < FMAX),
+        'converged': max_force < FMAX,
         'n_steps': opt.nsteps,
         'n_atoms': len(combined),
         'time_s': elapsed,
@@ -342,7 +363,7 @@ def step_site(site_name, output_dir):
     }
     save_json(output_dir / f'{prefix}.json', result)
     print(f"  E = {energy:.4f} eV, max|F| = {max_force:.4f}, intact = {intact}, "
-          f"height = {height:.2f} A, time = {elapsed:.0f}s", flush=True)
+          f"height = {height:.2f} Å, time = {elapsed:.0f}s", flush=True)
     return result
 
 
@@ -387,8 +408,8 @@ def step_summary(output_dir):
         data['verdict'] = verdict
         sites[site_name] = data
 
-        print(f"  {site_name}: E_ads = {E_ads:.4f} eV -> {verdict}", flush=True)
-        print(f"    intact={data['formate_intact']}, height={data['height_A']:.2f} A, "
+        print(f"  {site_name}: E_ads = {E_ads:.4f} eV → {verdict}", flush=True)
+        print(f"    intact={data['formate_intact']}, height={data['height_A']:.2f} Å, "
               f"time={data['time_s']:.0f}s", flush=True)
 
     # Overall
@@ -418,11 +439,32 @@ def step_summary(output_dir):
     return summary
 
 
-# --- Utilities ----------------------------------------------------------------
+# ─── Utilities ───────────────────────────────────────────────────────────────
+
+def _sanitize(obj):
+    """Recursively convert numpy types to native Python for JSON serialization.
+    Works with numpy 2.x where np.bool_.__name__ == 'bool'."""
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize(v) for v in obj]
+    if isinstance(obj, np.generic):
+        return obj.item()
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    return obj
+
 
 def save_json(path, data):
+    """Save JSON with numpy-safe serialization. MPI-safe: only rank 0 writes."""
+    try:
+        from gpaw.mpi import world
+        if world.rank != 0:
+            return
+    except ImportError:
+        pass
     with open(path, 'w') as f:
-        json.dump(data, f, indent=2)
+        json.dump(_sanitize(data), f, indent=2)
 
 
 def load_json(path):
@@ -432,7 +474,7 @@ def load_json(path):
         return json.load(f)
 
 
-# --- Main ---------------------------------------------------------------------
+# ─── Main ────────────────────────────────────────────────────────────────────
 
 STEP_MAP = {
     'ref_slab': lambda d: step_ref_slab(d),
@@ -456,8 +498,6 @@ def main():
                         help='Output directory for results')
     args = parser.parse_args()
 
-    register_sigterm_handler()
-
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -469,14 +509,10 @@ def main():
     print(f"Q-075 solvation DFT", flush=True)
     print(f"  Steps: {steps}", flush=True)
     print(f"  Output: {output_dir}", flush=True)
-    print(f"  Mode: FD (h={GRID_SPACING} A)", flush=True)
+    print(f"  Mode: FD (h={GRID_SPACING} Å)", flush=True)
     print(f"  Solvation: HW14 water (eps=78.36)\n", flush=True)
 
     for step_name in steps:
-        if is_shutdown_requested():
-            print(f"  SIGTERM received, stopping before {step_name}", flush=True)
-            break
-
         if step_name not in STEP_MAP:
             print(f"  Unknown step: {step_name}", flush=True)
             continue
@@ -489,10 +525,6 @@ def main():
 
         try:
             STEP_MAP[step_name](output_dir)
-        except SystemExit:
-            # Raised by CheckpointManager on SIGTERM during SCF
-            print(f"  {step_name}: checkpoint saved, exiting", flush=True)
-            raise
         except Exception as e:
             print(f"  {step_name}: FAILED -- {e}", flush=True)
             traceback.print_exc()

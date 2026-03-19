@@ -30,7 +30,7 @@ from pathlib import Path
 import numpy as np
 from ase import Atoms
 from ase.build import surface
-from ase.io import write, read
+from ase.io import write
 from ase.spacegroup import crystal
 
 

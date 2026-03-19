@@ -16,7 +16,7 @@ import sys
 import json
 from pathlib import Path
 from collections import defaultdict
-from typing import Dict, List, Tuple, Optional
+from typing import List
 
 import numpy as np
 from ase.io import read
