@@ -6,14 +6,14 @@ Parallelizable: each --step runs independently, results saved to JSON.
 Merge results with --step summary.
 
 Steps and dependencies:
-  ref_slab      → independent (relax slab in solvent)
-  ref_formate   → independent (formate in solvent box)
-  site_ontop    → needs ref_slab (loads relaxed slab)
-  site_bridge   → needs ref_slab
-  site_hollow   → needs ref_slab
-  summary       → needs all above (reads JSONs, computes E_ads)
+  ref_slab      -> independent (relax slab in solvent)
+  ref_formate   -> independent (formate in solvent box)
+  site_ontop    -> needs ref_slab (loads relaxed slab)
+  site_bridge   -> needs ref_slab
+  site_hollow   -> needs ref_slab
+  summary       -> needs all above (reads JSONs, computes E_ads)
 
-Example — 3 instances:
+Example -- 3 instances:
   Instance 1: python3 -u q075_solvation_dft.py --step ref_slab,ref_formate
   Instance 2: python3 -u q075_solvation_dft.py --step site_ontop,site_bridge
   Instance 3: python3 -u q075_solvation_dft.py --step site_hollow
@@ -43,21 +43,21 @@ from gpaw_checkpoint import (
 )
 
 
-# ─── Configuration ───────────────────────────────────────────────────────────
+# --- Configuration ------------------------------------------------------------
 
-GRID_SPACING = 0.18   # Å — real-space FD grid (SolvationGPAW requires FD, not PW)
+GRID_SPACING = 0.18   # Angstrom, real-space FD grid (SolvationGPAW requires FD, not PW)
 KPTS_SLAB = (2, 2, 1)
 KPTS_MOL = (1, 1, 1)  # molecule in box
-FMAX = 0.05           # eV/Å for BFGS
+FMAX = 0.05           # eV/A for BFGS
 MAX_STEPS_REF = 100
 MAX_STEPS_SITE = 300
-VACUUM_MOL = 8.0      # Å, box padding for isolated formate
+VACUUM_MOL = 8.0      # A, box padding for isolated formate
 
 
-# ─── Structure builders ──────────────────────────────────────────────────────
+# --- Structure builders -------------------------------------------------------
 
 def build_mackinawite_slab():
-    """Build mackinawite (001) 3x3x1 slab (72 atoms) + 12 Å vacuum."""
+    """Build mackinawite (001) 3x3x1 slab (72 atoms) + 12 A vacuum."""
     mack = crystal(
         symbols=['Fe', 'S'],
         basis=[(0, 0, 0), (0, 0.5, 0.2602)],
@@ -70,7 +70,7 @@ def build_mackinawite_slab():
 
 
 def build_formate_in_box():
-    """Build formate anion HCOO⁻ in a vacuum box."""
+    """Build formate anion HCOO- in a vacuum box."""
     # Formate geometry (planar, C2v)
     formate = Atoms(
         symbols='COOH',
@@ -98,7 +98,7 @@ def place_formate_on_slab(slab, site_name):
         fe_pos = slab.positions[fe_mask]
         top_fe = fe_pos[np.argmax(fe_pos[:, 2])]
         anchor = top_fe.copy()
-        anchor[2] = z_max + 2.0  # 2.0 Å above surface
+        anchor[2] = z_max + 2.0  # 2.0 A above surface
 
     elif site_name == 'bridge':
         # Between top Fe and top S
@@ -112,7 +112,7 @@ def place_formate_on_slab(slab, site_name):
         anchor[2] = z_max + 2.2
 
     elif site_name == 'hollow':
-        # Hollow site — center of Fe triangle
+        # Hollow site -- center of Fe triangle
         fe_mask = symbols == 'Fe'
         fe_pos = slab.positions[fe_mask]
         # Top 3 Fe atoms by z-coordinate (surface layer)
@@ -135,12 +135,12 @@ def place_formate_on_slab(slab, site_name):
     return combined
 
 
-# ─── Calculator setup ────────────────────────────────────────────────────────
+# --- Calculator setup ---------------------------------------------------------
 
 def make_solvation_calc(kpts, txt=None):
     """Create SolvationGPAW calculator with HW14 water model.
 
-    Uses FD (finite-difference) mode — SolvationGPAW does NOT support PW.
+    Uses FD (finite-difference) mode -- SolvationGPAW does NOT support PW.
     Custom vdW radii for Fe, S (not in HW14 defaults).
     """
     solv_kwargs = get_HW14_water_kwargs()
@@ -170,7 +170,7 @@ def make_solvation_calc(kpts, txt=None):
     return calc
 
 
-# ─── Step functions ──────────────────────────────────────────────────────────
+# --- Step functions -----------------------------------------------------------
 
 def step_ref_slab(output_dir):
     """Relax mackinawite slab in implicit solvent."""
@@ -223,7 +223,7 @@ def step_ref_slab(output_dir):
         'time_s': elapsed,
     }
     save_json(output_dir / 'ref_slab.json', result)
-    print(f"  E_slab_solv = {energy:.4f} eV, max|F| = {max_force:.4f}, "
+    print(f"  E_slab_solv = {energy:.4f} eV, max|F| = {max_force:.4f} eV/A, "
           f"steps = {opt.nsteps}, time = {elapsed:.0f}s", flush=True)
     return result
 
@@ -256,12 +256,15 @@ def step_ref_formate(output_dir):
     opt.run(fmax=FMAX, steps=MAX_STEPS_REF)
 
     energy = formate.get_potential_energy()
+    forces = formate.get_forces()
+    max_force = np.max(np.linalg.norm(forces, axis=1))
     elapsed = time.time() - t0
 
     result = {
         'step': 'ref_formate',
         'energy_eV': energy,
-        'converged': True,
+        'max_force_eV_A': float(max_force),
+        'converged': bool(max_force < FMAX),
         'n_steps': opt.nsteps,
         'time_s': elapsed,
     }
@@ -339,7 +342,7 @@ def step_site(site_name, output_dir):
     }
     save_json(output_dir / f'{prefix}.json', result)
     print(f"  E = {energy:.4f} eV, max|F| = {max_force:.4f}, intact = {intact}, "
-          f"height = {height:.2f} Å, time = {elapsed:.0f}s", flush=True)
+          f"height = {height:.2f} A, time = {elapsed:.0f}s", flush=True)
     return result
 
 
@@ -384,8 +387,8 @@ def step_summary(output_dir):
         data['verdict'] = verdict
         sites[site_name] = data
 
-        print(f"  {site_name}: E_ads = {E_ads:.4f} eV → {verdict}", flush=True)
-        print(f"    intact={data['formate_intact']}, height={data['height_A']:.2f} Å, "
+        print(f"  {site_name}: E_ads = {E_ads:.4f} eV -> {verdict}", flush=True)
+        print(f"    intact={data['formate_intact']}, height={data['height_A']:.2f} A, "
               f"time={data['time_s']:.0f}s", flush=True)
 
     # Overall
@@ -415,7 +418,7 @@ def step_summary(output_dir):
     return summary
 
 
-# ─── Utilities ───────────────────────────────────────────────────────────────
+# --- Utilities ----------------------------------------------------------------
 
 def save_json(path, data):
     with open(path, 'w') as f:
@@ -429,7 +432,7 @@ def load_json(path):
         return json.load(f)
 
 
-# ─── Main ────────────────────────────────────────────────────────────────────
+# --- Main ---------------------------------------------------------------------
 
 STEP_MAP = {
     'ref_slab': lambda d: step_ref_slab(d),
@@ -466,7 +469,7 @@ def main():
     print(f"Q-075 solvation DFT", flush=True)
     print(f"  Steps: {steps}", flush=True)
     print(f"  Output: {output_dir}", flush=True)
-    print(f"  Mode: FD (h={GRID_SPACING} Å)", flush=True)
+    print(f"  Mode: FD (h={GRID_SPACING} A)", flush=True)
     print(f"  Solvation: HW14 water (eps=78.36)\n", flush=True)
 
     for step_name in steps:
