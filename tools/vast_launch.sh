@@ -130,6 +130,12 @@ trap cleanup EXIT
 trap forward_sigterm TERM
 trap 'echo "[$(date)] Received SIGINT" >> "$LOGFILE"; [ -n "$PY_PID" ] && kill -INT "$PY_PID" 2>/dev/null; exit 130' INT
 
+# === LOG ROTATION ===
+# Preserve previous logs for crash forensics (don't overwrite!)
+for f in "$LOGFILE" "$ERRLOG" "$CRASH_INFO"; do
+    [ -s "$f" ] && cp "$f" "${f}.prev" 2>/dev/null
+done
+
 # === LAUNCH ===
 echo $$ > "$LOCKFILE"
 

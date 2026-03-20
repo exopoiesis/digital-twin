@@ -291,6 +291,9 @@ def step_site(site_name, output_dir):
             if n_frames[0] > 0:
                 last_pos = traj[-1].positions.copy()
             traj.close()
+            # Backup trajectory before BFGS overwrites it
+            import shutil
+            shutil.copy2(str(traj_path), str(traj_path) + '.bak')
         except Exception:
             n_frames[0] = 0
     world.broadcast(n_frames, 0)
@@ -302,30 +305,35 @@ def step_site(site_name, output_dir):
         if world.rank == 0:
             print(f"  Resumed positions from {traj_path} ({n_frames[0]} frames)", flush=True)
 
-    # Try to resume SCF from checkpoint (wavefunctions), fall back to fresh
+    # SolvationGPAW restart= is BUGGY (eigensolver not initialized, crashes
+    # at set_positions). Create fresh calculator -- SCF converges fine from
+    # scratch. We still save checkpoints for potential future use.
     ckpt_path = output_dir / f'{prefix}_checkpoint.gpw'
     calc = make_solvation_calc(
         KPTS_SLAB,
         txt=str(output_dir / f'{prefix}.txt'),
-        restart=str(ckpt_path),
+        restart=None,
     )
     combined.calc = calc
 
-    # Attach periodic checkpoint saving (every 5 SCF iters, min 3 min apart)
-    try:
-        import sys
-        if '/workspace' not in sys.path:
-            sys.path.insert(0, '/workspace')
-        from gpaw_checkpoint import CheckpointManager
-        ckpt_mgr = CheckpointManager(combined, ckpt_path, interval=5,
-                                     min_save_interval=180)
-        ckpt_mgr.attach_to_calc(calc)
-    except Exception as e:
-        if world.rank == 0:
-            print(f"  [checkpoint] Attach failed ({e}), continuing without", flush=True)
+    # MPI-safe: only rank 0 writes trajectory and logfile to avoid race condition
+    traj_file = str(output_dir / f'{prefix}.traj') if world.rank == 0 else None
+    log_file = str(output_dir / f'{prefix}_bfgs.log') if world.rank == 0 else None
+    opt = BFGS(combined, trajectory=traj_file, logfile=log_file)
 
-    opt = BFGS(combined, trajectory=str(output_dir / f'{prefix}.traj'),
-               logfile=str(output_dir / f'{prefix}_bfgs.log'))
+    # Checkpoint via BFGS observer (fires after each BFGS step on ALL ranks).
+    # SCF-level calc.attach() does NOT work for SolvationGPAW.
+    def _bfgs_checkpoint():
+        try:
+            calc.write(str(ckpt_path), mode='all')
+            if world.rank == 0:
+                print(f"  [checkpoint] Saved after BFGS step {opt.nsteps}"
+                      f" -> {ckpt_path.name}", flush=True)
+        except Exception as e:
+            if world.rank == 0:
+                print(f"  [checkpoint] Save failed: {e}", flush=True)
+    opt.attach(_bfgs_checkpoint, interval=1)
+
     opt.run(fmax=FMAX, steps=MAX_STEPS_SITE)
 
     energy = combined.get_potential_energy()

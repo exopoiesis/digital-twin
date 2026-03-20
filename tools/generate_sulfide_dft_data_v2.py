@@ -198,7 +198,7 @@ def build_mackinawite_surface() -> List[Tuple[Atoms, str]]:
     mack = build_mackinawite()
 
     # Build 2x2x1 slab with 2 layers (~4-5 Å thick) + 10 Å vacuum
-    slab = surface(mack, (0, 0, 1), layers=2, vacuum=10.0)
+    slab = surface(mack, (0, 0, 1), layers=2, vacuum=12.0)
     slab = slab.repeat((2, 2, 1))  # 2x2 supercell
 
     configs = [(slab.copy(), "mackinawite_001_slab")]
@@ -215,7 +215,7 @@ def build_mackinawite_surface() -> List[Tuple[Atoms, str]]:
 def build_mackinawite_surface_with_H() -> List[Tuple[Atoms, str]]:
     """Build mackinawite surface + H at 3 positions (interstitial, surface, bridge)."""
     mack = build_mackinawite()
-    slab = surface(mack, (0, 0, 1), layers=2, vacuum=10.0)
+    slab = surface(mack, (0, 0, 1), layers=2, vacuum=12.0)
     slab = slab.repeat((2, 2, 1))
 
     configs = []
@@ -269,7 +269,7 @@ def build_pentlandite_surface() -> List[Tuple[Atoms, str]]:
 
     # Build (001) surface with 2 layers + 10 Å vacuum
     # Try 1x1 first to keep atom count manageable
-    slab = surface(pent, (0, 0, 1), layers=2, vacuum=10.0)
+    slab = surface(pent, (0, 0, 1), layers=2, vacuum=12.0)
 
     # If needed, can repeat (2, 2, 1) later, but let's try minimal first
     # For now, use single cell (will be ~20 atoms with 2 layers)
@@ -288,7 +288,7 @@ def build_pentlandite_surface() -> List[Tuple[Atoms, str]]:
 def build_pentlandite_surface_with_H() -> List[Tuple[Atoms, str]]:
     """Build pentlandite (001) surface + H at 3 positions."""
     pent = build_pentlandite()
-    slab = surface(pent, (0, 0, 1), layers=2, vacuum=10.0)
+    slab = surface(pent, (0, 0, 1), layers=2, vacuum=12.0)
 
     configs = []
 
@@ -314,19 +314,19 @@ def build_pentlandite_surface_with_H() -> List[Tuple[Atoms, str]]:
     slab1 = slab.copy()
     h_pos_1 = top_fe + [0, 0, 1.5]
     slab1 += Atoms('H', positions=[h_pos_1])
-    configs.append((slab1, "pentlandite_001_H_ontop_Fe"))
+    configs.append((slab1, "pentlandite_001_slab_H_ontop_Fe"))
 
     # Position 2: H on top of Ni
     slab2 = slab.copy()
     h_pos_2 = top_ni + [0, 0, 1.5]
     slab2 += Atoms('H', positions=[h_pos_2])
-    configs.append((slab2, "pentlandite_001_H_ontop_Ni"))
+    configs.append((slab2, "pentlandite_001_slab_H_ontop_Ni"))
 
     # Position 3: H at bridge between Fe and Ni
     slab3 = slab.copy()
     h_pos_3 = (top_fe + top_ni) / 2 + [0, 0, 1.2]
     slab3 += Atoms('H', positions=[h_pos_3])
-    configs.append((slab3, "pentlandite_001_H_bridge"))
+    configs.append((slab3, "pentlandite_001_slab_H_bridge"))
 
     return configs
 
@@ -340,7 +340,7 @@ def build_pyrite_surface() -> List[Tuple[Atoms, str]]:
     pyr = build_pyrite()
 
     # Build (100) surface with 2 layers + 10 Å vacuum
-    slab = surface(pyr, (1, 0, 0), layers=2, vacuum=10.0)
+    slab = surface(pyr, (1, 0, 0), layers=2, vacuum=12.0)
     slab = slab.repeat((2, 2, 1))  # 2x2 supercell
 
     configs = [(slab.copy(), "pyrite_100_slab")]
@@ -355,9 +355,12 @@ def build_pyrite_surface() -> List[Tuple[Atoms, str]]:
 
 
 def build_pyrite_surface_with_H() -> List[Tuple[Atoms, str]]:
-    """Build pyrite (100) surface + H at 3 positions."""
+    """Build pyrite (100) surface + H at 3 positions.
+
+    H placed relative to surface z-max to avoid overlaps with protruding S.
+    """
     pyr = build_pyrite()
-    slab = surface(pyr, (1, 0, 0), layers=2, vacuum=10.0)
+    slab = surface(pyr, (1, 0, 0), layers=2, vacuum=12.0)
     slab = slab.repeat((2, 2, 1))
 
     configs = []
@@ -371,29 +374,33 @@ def build_pyrite_surface_with_H() -> List[Tuple[Atoms, str]]:
 
     top_fe = fe_positions[np.argmax(fe_positions[:, 2])]
     top_s = s_positions[np.argmax(s_positions[:, 2])]
+    z_surface = max(top_fe[2], top_s[2])
 
-    # Position 1: H on top of Fe
+    # Position 1: H on top of Fe (1.6 A above surface)
     slab1 = slab.copy()
-    h_pos_1 = top_fe + [0, 0, 1.5]
+    h_pos_1 = [top_fe[0], top_fe[1], z_surface + 1.6]
     slab1 += Atoms('H', positions=[h_pos_1])
-    configs.append((slab1, "pyrite_100_H_ontop_Fe"))
+    configs.append((slab1, "pyrite_100_slab_H_ontop_Fe"))
 
-    # Position 2: H at bridge between Fe and S
+    # Position 2: H at bridge between Fe and S (1.5 A above surface)
     slab2 = slab.copy()
-    h_pos_2 = (top_fe + top_s) / 2 + [0, 0, 1.2]
+    h_pos_2 = [(top_fe[0] + top_s[0]) / 2,
+               (top_fe[1] + top_s[1]) / 2,
+               z_surface + 1.5]
     slab2 += Atoms('H', positions=[h_pos_2])
-    configs.append((slab2, "pyrite_100_H_bridge_FeS"))
+    configs.append((slab2, "pyrite_100_slab_H_bridge_FeS"))
 
-    # Position 3: H at hollow site (approximate)
+    # Position 3: H at hollow site (1.3 A above surface)
     slab3 = slab.copy()
-    # Find another nearby atom for hollow
-    distances = np.linalg.norm(slab.positions - top_fe, axis=1)
-    distances[np.argmax(fe_positions[:, 2])] = np.inf  # Exclude top_fe itself
-    second_nearest_idx = np.argmin(distances)
-    second_pos = slab.positions[second_nearest_idx]
-    h_pos_3 = (top_fe + top_s + second_pos) / 3 + [0, 0, 1.0]
+    # Find nearest Fe neighbor (excluding top_fe itself)
+    fe_dists = np.linalg.norm(fe_positions - top_fe, axis=1)
+    fe_dists[np.argmax(fe_positions[:, 2])] = np.inf
+    second_fe = fe_positions[np.argmin(fe_dists)]
+    h_pos_3 = [(top_fe[0] + top_s[0] + second_fe[0]) / 3,
+               (top_fe[1] + top_s[1] + second_fe[1]) / 3,
+               z_surface + 1.3]
     slab3 += Atoms('H', positions=[h_pos_3])
-    configs.append((slab3, "pyrite_100_H_hollow"))
+    configs.append((slab3, "pyrite_100_slab_H_hollow"))
 
     return configs
 
@@ -406,10 +413,11 @@ def build_pentlandite_H_path() -> List[Tuple[Atoms, str]]:
 
     # Remove one S to create vacancy, add H nearby
     atoms = pent.copy()
+    vacancy_pos = atoms.positions[-1].copy()  # Save vacancy position BEFORE deleting
     del atoms[-1]  # Remove last S atom
 
     # Position 1: H at vacancy site
-    pos_1 = atoms.positions[-1].copy()  # Position of removed S
+    pos_1 = vacancy_pos
     atoms_1 = atoms.copy()
     atoms_1 += Atoms('H', positions=[pos_1])
     configs.append((atoms_1, "pentlandite_H_vacancy_start"))
@@ -433,6 +441,14 @@ def build_pentlandite_H_path() -> List[Tuple[Atoms, str]]:
     return configs
 
 
+def check_min_distance(atoms, min_dist=1.2):
+    """Check minimum interatomic distance. Returns (ok, min_d)."""
+    dists = atoms.get_all_distances(mic=True)
+    np.fill_diagonal(dists, np.inf)
+    min_d = np.min(dists)
+    return min_d >= min_dist, min_d
+
+
 def run_gpaw_single_point(atoms: Atoms, config_label: str, is_slab: bool = False) -> Dict:
     """Run GPAW single-point calculation (energy, forces, stress)."""
     # GPAW settings matching q075-dft
@@ -452,8 +468,9 @@ def run_gpaw_single_point(atoms: Atoms, config_label: str, is_slab: bool = False
         kpts=kpts,
         occupations=FermiDirac(0.1),
         convergence={'energy': 1e-5},
+        maxiter=500,
         parallel={'augment_grids': True},
-        txt=None,  # Suppress output
+        txt=f'/workspace/results/{config_label}.txt',
     )
 
     atoms.calc = calc
@@ -685,11 +702,24 @@ def main():
         t0 = time.time()
 
         try:
+            # Pre-flight: check min distance
+            ok, min_d = check_min_distance(atoms)
+            if not ok:
+                print(f"[{idx}/{n_total}] {label}: SKIPPED -- min_d={min_d:.3f} A < 1.2 A",
+                      flush=True)
+                n_failed += 1
+                continue
+
             # Run GPAW
             results = run_gpaw_single_point(atoms, label, is_slab)
 
             # Save to XYZ
             save_to_extxyz(atoms, results, output_path)
+
+            # Clean up GPAW log on success
+            gpaw_log = Path(f'/workspace/results/{label}.txt')
+            if gpaw_log.exists():
+                gpaw_log.unlink()
 
             # Log
             max_force = np.max(np.linalg.norm(results['forces'], axis=1))

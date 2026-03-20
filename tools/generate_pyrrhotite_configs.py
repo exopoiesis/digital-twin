@@ -5,7 +5,7 @@ Generate DFT training data for pyrrhotite Fe7S8 (Tier 2A).
 Pyrrhotite is the most abundant iron sulfide in hydrothermal systems.
 It is a Fe-deficient derivative of troilite (NiAs-type FeS) with ordered
 Fe vacancies. Structure: monoclinic 4C superstructure, but for DFT training
-we use a simplified model — NiAs 2x2x2 supercell with 2 Fe removed.
+we use a simplified model -- NiAs 2x2x2 supercell with 2 Fe removed.
 
 Fe16S16 → remove 2 Fe → Fe14S16 ≡ Fe7S8
 
@@ -308,7 +308,7 @@ def generate_all_configs():
 
 def run_gpaw_single_point(atoms, config_label, is_slab=False):
     """Run GPAW single-point with spin polarization."""
-    from gpaw import GPAW, PW, FermiDirac
+    from gpaw import GPAW, PW, FermiDirac, MixerDif, Mixer
 
     n_atoms = len(atoms)
 
@@ -325,14 +325,19 @@ def run_gpaw_single_point(atoms, config_label, is_slab=False):
         else:
             kpts = (3, 3, 3)
 
+    # MixerDif for AFM/ferrimagnetic slabs (charge sloshing prevention)
+    mixer = MixerDif(0.02, 5) if is_slab else Mixer(0.05, 5)
+
     calc = GPAW(
         mode=mode,
         xc='PBE',
         kpts=kpts,
         occupations=FermiDirac(0.1),
         convergence={'energy': 1e-5},
+        mixer=mixer,
+        maxiter=500,
         parallel={'augment_grids': True},
-        txt=None,
+        txt=f'/workspace/results/{config_label}.txt',
     )
 
     atoms.calc = calc
@@ -377,7 +382,7 @@ def main():
     configs = generate_all_configs()
 
     if args.dry_run:
-        print("\nDRY RUN — config list:")
+        print("\nDRY RUN -- config list:")
         for atoms, label, is_slab in configs:
             slab_tag = " [SLAB]" if is_slab else ""
             mag = atoms.get_initial_magnetic_moments()
@@ -398,12 +403,18 @@ def main():
     print(f"Remaining: {len(remaining)} configs to compute\n", flush=True)
 
     log_path = output_path.parent / 'pyrrhotite_log.txt'
+    n_success = 0
+    n_failed = 0
 
     for i, (atoms, label, is_slab) in enumerate(remaining):
         t0 = time.time()
         try:
             results = run_gpaw_single_point(atoms, label, is_slab)
             save_to_extxyz(atoms, results, output_path)
+            # Clean up GPAW log on success
+            gpaw_log = Path(f'/workspace/results/{label}.txt')
+            if gpaw_log.exists():
+                gpaw_log.unlink()
             dt = time.time() - t0
             msg = (f"[{i+1}/{len(remaining)}] {label}: "
                    f"E={results['energy']:.4f} eV, "
@@ -412,18 +423,29 @@ def main():
             print(msg, flush=True)
             with open(log_path, 'a') as f:
                 f.write(msg + '\n')
+            n_success += 1
         except Exception as e:
-            msg = f"[{i+1}/{len(remaining)}] {label}: FAILED — {e}"
+            msg = f"[{i+1}/{len(remaining)}] {label}: FAILED -- {e}"
             print(msg, flush=True)
             with open(log_path, 'a') as f:
                 f.write(msg + '\n')
             traceback.print_exc()
+            n_failed += 1
 
     print(f"\n{'=' * 60}", flush=True)
     print(f"Done. Output: {output_path}", flush=True)
+    print(f"  Success: {n_success}/{len(remaining)}", flush=True)
+    print(f"  Failed:  {n_failed}/{len(remaining)}", flush=True)
     if output_path.exists():
         final = read(output_path, index=':', format='extxyz')
         print(f"Total configs in file: {len(final)}", flush=True)
+
+    # DONE marker for monitoring
+    done_path = output_path.parent / 'DONE'
+    done_path.write_text(
+        f"pyrrhotite completed {n_success}/{len(remaining)} at "
+        f"{time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}\n"
+    )
 
 
 if __name__ == '__main__':
