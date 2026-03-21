@@ -11,6 +11,7 @@ TM6v3 architecture (pentlandite + mackinawite membrane, two-chamber design).
 oracle/                 — ORACLE pipeline (Phases A → B → C → D)
   oracle/data/          — Precomputed datasets + trained models (~58 MB)
 hypothesis-tester/      — CLI for rapid hypothesis testing against the trained surrogate
+tools/                  — Vast.ai launch/monitoring scripts, DFT config generators
 example_results/        — Small JSON summaries for reference
 ```
 
@@ -85,6 +86,16 @@ python oracle/oracle_phase_d_fno_ode.py --validate --scan
 ```
 
 See `oracle/README.md` and `hypothesis-tester/README.md` for details.
+
+## GPAW DFT: Computation Guide
+
+Running DFT on iron-sulfide minerals in the cloud? See **[GPAW_COMPUTATION_GUIDE.md](GPAW_COMPUTATION_GUIDE.md)** — a battle-tested reference covering:
+
+- **Hardware selection** — why CPU GHz matters more than GPU for GPAW, and why desktop Intel is a trap for MPI
+- **Real benchmarks** — timings for 10 minerals (8–136 atoms) across RTX 3060 to RTX 5070 Ti, with costs
+- **Bug Hall of Fame** — 15 documented bugs that cost us ~220 hours, so you don't repeat them
+- **SCF convergence recipes** — mixer settings, magnetic moments, and smearing by mineral type
+- **Operational patterns** — monitoring, log rotation, MPI guards, and stuck-process diagnostics
 
 ## Requirements
 
