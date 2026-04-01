@@ -81,8 +81,6 @@ else
 fi
 
 # === SIGNAL HANDLING ===
-PY_PID=""
-
 cleanup() {
     local exit_code=$?
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Script terminated with exit code: $exit_code" | tee -a "$LOGFILE"
@@ -113,28 +111,40 @@ cleanup() {
     rm -f "$LOCKFILE"
 }
 
-forward_sigterm() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] SIGTERM received, forwarding to PID=$PY_PID" >> "$LOGFILE"
-    if [ -n "$PY_PID" ]; then
-        kill -TERM "$PY_PID" 2>/dev/null
-        # Vast.ai gives only 10s total before SIGKILL -- wait up to 8s
-        for i in $(seq 1 8); do
-            kill -0 "$PY_PID" 2>/dev/null || break
-            sleep 1
-        done
-    fi
-    exit 143
-}
-
 trap cleanup EXIT
-trap forward_sigterm TERM
-trap 'echo "[$(date)] Received SIGINT" >> "$LOGFILE"; [ -n "$PY_PID" ] && kill -INT "$PY_PID" 2>/dev/null; exit 130' INT
+trap 'echo "[$(date)] Received SIGTERM" >> "$LOGFILE"; exit 143' TERM
+trap 'echo "[$(date)] Received SIGINT" >> "$LOGFILE"; exit 130' INT
 
 # === LOG ROTATION ===
 # Preserve previous logs for crash forensics (don't overwrite!)
 for f in "$LOGFILE" "$ERRLOG" "$CRASH_INFO"; do
     [ -s "$f" ] && cp "$f" "${f}.prev" 2>/dev/null
 done
+
+# === BACKUP RESULTS ===
+# Preserve trajectory, BFGS logs, JSON results before launching.
+# Script may overwrite .traj on start — losing hours/days of optimization.
+RESULTS_DIR="/workspace/results"
+BACKUP_TS=$(date +%Y%m%d_%H%M%S)
+BACKUP_DIR="${RESULTS_DIR}/_backup_${BACKUP_TS}"
+_backed_up=0
+for ext in traj json xyz; do
+    for f in $(find "$RESULTS_DIR" -maxdepth 2 -name "*.${ext}" -size +0c 2>/dev/null); do
+        if [ $_backed_up -eq 0 ]; then
+            mkdir -p "$BACKUP_DIR"
+            echo "Backing up results to $BACKUP_DIR ..."
+            _backed_up=1
+        fi
+        cp "$f" "$BACKUP_DIR/" 2>/dev/null
+        echo "  backed up: $(basename $f) ($(stat -c%s "$f" 2>/dev/null || echo '?') bytes)"
+    done
+done
+# Also backup BFGS/FIRE logs
+for f in $(find "$RESULTS_DIR" -maxdepth 2 -name "*bfgs*.log" -size +0c 2>/dev/null); do
+    [ $_backed_up -eq 0 ] && mkdir -p "$BACKUP_DIR" && _backed_up=1
+    cp "$f" "$BACKUP_DIR/" 2>/dev/null
+done
+[ $_backed_up -eq 1 ] && echo "Backup complete: $(du -sh $BACKUP_DIR | cut -f1)" || echo "No previous results to back up."
 
 # === LAUNCH ===
 echo $$ > "$LOCKFILE"
@@ -148,10 +158,8 @@ echo "GPU: GPAW_NEW=$GPAW_NEW, GPAW_USE_GPUS=$GPAW_USE_GPUS" | tee -a "$LOGFILE"
 echo "Lock: $LOCKFILE (PID $$)" | tee -a "$LOGFILE"
 echo "=========================================" | tee -a "$LOGFILE"
 
-# Run python3 in background for signal forwarding
-python3 -u "/workspace/$SCRIPT" $ARGS >> "$LOGFILE" 2>> "$ERRLOG" &
-PY_PID=$!
-wait $PY_PID
+# Run python3 with SEPARATE stdout and stderr
+python3 -u "/workspace/$SCRIPT" $ARGS >> "$LOGFILE" 2>> "$ERRLOG"
 PY_EXIT=$?
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Python exited with code: $PY_EXIT" | tee -a "$LOGFILE"

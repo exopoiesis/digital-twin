@@ -47,6 +47,60 @@ echo ""
 echo "--- XYZ ---"
 wc -l /workspace/results/*.xyz 2>/dev/null
 grep -c Properties /workspace/results/*.xyz 2>/dev/null
+
+echo ""
+echo "--- ETA ---"
+# FIRE logs (ABACUS NEB)
+for f in /workspace/neb_work/neb.log /workspace/neb_work/relax_start.log /workspace/neb_work/relax_end.log; do
+  if [ -f "$f" ] && grep -q "^FIRE:" "$f" 2>/dev/null; then
+    n=$(grep -c "^FIRE:" "$f")
+    last=$(grep "^FIRE:" "$f" | tail -1)
+    fmax=$(echo "$last" | awk '{print $NF}')
+    # Time per step from last 2
+    t1=$(grep "^FIRE:" "$f" | tail -2 | head -1 | awk '{print $3}')
+    t2=$(grep "^FIRE:" "$f" | tail -1 | awk '{print $3}')
+    s1=$(echo "$t1" | awk -F: '{print $1*3600+$2*60+$3}')
+    s2=$(echo "$t2" | awk -F: '{print $1*3600+$2*60+$3}')
+    dt=$((s2-s1)); [ "$dt" -lt 0 ] && dt=$((dt+86400))
+    fname=$(basename "$f")
+    if command -v python3 &>/dev/null && [ "$dt" -gt 0 ]; then
+      eta=$(python3 -c "
+import math
+fmax=${fmax}; target=0.05; dt=${dt}
+if fmax<=target: print('CONVERGED')
+else:
+  steps=int(math.log(fmax/target)/math.log(2)*5)
+  h=steps*dt/3600
+  print(f'step {$n}, fmax={fmax}, ~{dt}s/step, ~{steps} steps, ~{h:.1f}h')
+" 2>/dev/null)
+      echo "  $fname: $eta"
+    else
+      echo "  $fname: step $n, fmax=$fmax, ~${dt}s/step"
+    fi
+  fi
+done
+# LCAOMinimize (JDFTx)
+for f in $(find /workspace/results -name "*.out" -size +1k 2>/dev/null); do
+  if grep -q "LCAOMinimize: Iter:" "$f" 2>/dev/null; then
+    last=$(grep "LCAOMinimize: Iter:" "$f" | tail -1)
+    iter=$(echo "$last" | awk -F'Iter:' '{print $2}' | awk '{print $1}')
+    grad=$(echo "$last" | sed 's/.*|grad|_K:\s*//' | awk '{print $1}')
+    t1=$(grep "LCAOMinimize: Iter:" "$f" | tail -2 | head -1 | sed 's/.*t\[s\]:\s*//' | awk '{printf "%.0f",$1}')
+    t2=$(grep "LCAOMinimize: Iter:" "$f" | tail -1 | sed 's/.*t\[s\]:\s*//' | awk '{printf "%.0f",$1}')
+    if [ -n "$t1" ] && [ -n "$t2" ]; then
+      dt=$((t2-t1))
+      left=$((40-iter)); [ "$left" -lt 5 ] && left=5
+      if command -v python3 &>/dev/null; then
+        eta_h=$(python3 -c "print(f'{${left}*${dt}/3600:.1f}')" 2>/dev/null)
+        echo "  $(basename $f): LCAOMin iter $iter, |grad|=$grad, ~${dt}s/iter, ~${left} left, ~${eta_h}h (LCAO phase, SCF follows)"
+      else
+        echo "  $(basename $f): LCAOMin iter $iter, ~${dt}s/iter"
+      fi
+    else
+      echo "  $(basename $f): LCAOMin iter $iter, |grad|=$grad"
+    fi
+  fi
+done
 true
 REMOTEOF
 )
