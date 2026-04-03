@@ -1,0 +1,77 @@
+{
+  "mineral": "mackinawite",
+  "formula": "FeS",
+  "space_group": "P4/nmm (#129)",
+  "property": "H+ transport barriers (multiple pathways)",
+  "structure_type": "layered (van der Waals gap between FeS sheets)",
+  "updated": "2026-04-04",
+
+  "barriers": [
+    {
+      "pathway": "A: intra-layer S-S hop",
+      "method": "GPAW",
+      "xc": "PBE",
+      "basis": "PW 350 eV",
+      "cell": "2x2x1 supercell (15 atoms)",
+      "kpts": [2, 2, 1],
+      "E_a_eV": 0.738,
+      "images": 5,
+      "neb_type": "CI-NEB",
+      "neb_steps": 36,
+      "hardware": "RTX 3080 GPU"
+    },
+    {
+      "pathway": "A: intra-layer S-S hop",
+      "method": "MACE-MP-0",
+      "cell": "2x2x1 supercell (15 atoms)",
+      "E_a_eV": 0.440,
+      "note": "ML underestimates by ~0.3 eV vs DFT"
+    },
+    {
+      "pathway": "B: cross-layer S-S hop",
+      "method": "Quantum ESPRESSO",
+      "xc": "PBE",
+      "basis": "USPP, ecutwfc 60 Ry",
+      "cell": "2x2x1 supercell (15 atoms)",
+      "kpts": [3, 3, 2],
+      "E_a_eV": 2.479,
+      "images": 5,
+      "neb_type": "CI-NEB",
+      "neb_steps": 52,
+      "note": "Through the VdW gap — prohibitively high without water"
+    },
+    {
+      "pathway": "C: VdW gap (dry)",
+      "method": "MACE-MP-0",
+      "E_a_eV": 4.190,
+      "note": "Direct hop through vacuum gap — effectively blocked"
+    },
+    {
+      "pathway": "D: Grotthuss (H+ via interlayer water)",
+      "method": "literature (Marx et al. 2006; Jia et al. 2024)",
+      "E_a_eV": "~0 (near-barrierless)",
+      "note": "Proton transfer along H-bond network in hydrated interlayer. Our NEB calculation in progress."
+    }
+  ],
+
+  "key_insight": "Dry mackinawite: intra-layer hop at ~0.7 eV (moderate conductor). Hydrated mackinawite: Grotthuss mechanism through interlayer water at ~0 eV (fast proton transport). Layered structure is key — interlayer water provides the fast pathway.",
+
+  "vacancy_formation": {
+    "E_vac_eV": 5.668,
+    "method": "ABACUS v3.9, PW GPU, kpts 2x2x2",
+    "cell": "3x3x2 supercell (72 atoms)",
+    "note": "Higher than pentlandite — fewer intrinsic vacancies, but Grotthuss pathway bypasses vacancy requirement"
+  },
+
+  "literature_comparison": {
+    "Liang_2021_ACS_Omega": "0.26-1.12 eV depending on surface defects",
+    "Luo_2019": "H diffusion in FeS layers",
+    "note": "Our intra-layer barrier (0.74 eV) falls within the independent literature range"
+  },
+
+  "scripts": [
+    "tools/neb_mackinawite_gpu.py (GPAW)",
+    "tools/neb_mackinawite_qe.py (QE, intra-layer)",
+    "tools/neb_mackinawite_grotthuss_qe_gpu.py (QE, Grotthuss with water)"
+  ]
+}

@@ -16,25 +16,25 @@ Requires a trained FNO model from Phase B (see `oracle/README.md`).
 ## Usage
 
 ```bash
-# Single query
-python oracle_hypothesis_tester.py --mode single \
-  --param L_mack --value 50
+# Single query (override any parameter with --<param_name> <value>)
+python oracle_hypothesis_tester.py --mode single --L_mack 50
 
 # Parameter sweep (e.g., mackinawite thickness 5–200 nm)
 python oracle_hypothesis_tester.py --mode sweep \
-  --param L_mack --min 5 --max 200 --n 30
+  --param L_mack --range 5,200 --n 30
 
 # Find minimum L_mack for A* > 1 mM
 python oracle_hypothesis_tester.py --mode threshold \
-  --param L_mack --min 1 --max 200 --target 1.0
+  --param L_mack --range 1,200 --target 1.0
 
 # 2D heatmap (L_mack × delta_pH)
 python oracle_hypothesis_tester.py --mode grid2d \
-  --param L_mack --min 5 --max 200 \
-  --param2 delta_pH --min2 2 --max2 8 --n 15
+  --param1 L_mack --range1 5,200 \
+  --param2 delta_pH --range2 2,8 --n 15
 
 # Monte Carlo robustness (100 random samples, ±30%)
-python oracle_hypothesis_tester.py --mode montecarlo --n 100 --spread 0.3
+python oracle_hypothesis_tester.py --mode montecarlo \
+  --vary L_mack --spread 0.3 --n 100
 ```
 
 ## Parameters

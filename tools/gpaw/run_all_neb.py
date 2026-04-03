@@ -1,11 +1,12 @@
 """
 Запуск всех 4 NEB расчётов последовательно.
-Использование: python scripts/run_all_neb.py [mineral]
+Использование: python run_all_neb.py [mineral]
   mineral = pentlandite | greigite | violarite | pyrite | all (default)
 """
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 SCRIPTS = {
     'pentlandite': 'neb_pentlandite_gpu.py',
@@ -20,7 +21,7 @@ def run_one(name, script):
     print(f"{'='*70}\n")
     t0 = time.time()
     result = subprocess.run(
-        ['python', '-u', f'/workspace/scripts/{script}'],
+        ['python', '-u', str(Path(__file__).parent / script)],
         cwd='/workspace'
     )
     elapsed = time.time() - t0

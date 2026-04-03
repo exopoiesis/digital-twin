@@ -9,7 +9,7 @@
 # 1) Inline (recommended) — paste the bootstrap one-liner:
 #    vastai create instance <offer_id> --image exopoiesis/infra-gpaw-gpu --disk 20 --ssh \
 #      --label "my-worker" \
-#      --onstart-cmd 'export TZ=Europe/Kyiv; git clone --depth 1 https://github.com/exopoiesis/digital-twin.git /workspace/digital-twin && cp /workspace/digital-twin/tools/*.sh /workspace/digital-twin/tools/*.py /workspace/ 2>/dev/null; chmod +x /workspace/*.sh; mkdir -p /workspace/results; nohup bash /workspace/vast_monitor.sh >/dev/null 2>&1 & disown'
+#      --onstart-cmd 'export TZ=Europe/Kyiv; git clone --depth 1 https://github.com/exopoiesis/digital-twin.git /workspace/digital-twin && cp /workspace/digital-twin/tools/infra/*.sh /workspace/digital-twin/tools/gpaw/*.py /workspace/digital-twin/tools/abacus/*.py /workspace/digital-twin/tools/qe/*.py /workspace/ 2>/dev/null; chmod +x /workspace/*.sh; mkdir -p /workspace/results; nohup bash /workspace/vast_monitor.sh >/dev/null 2>&1 & disown'
 #
 # 2) Full script — from local machine with the repo cloned:
 #    vastai create instance <offer_id> ... \

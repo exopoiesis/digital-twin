@@ -1,0 +1,77 @@
+{
+  "mineral": "pyrite",
+  "formula": "FeS2",
+  "space_group": "Pa-3 (#205)",
+  "property": "H+ diffusion barrier (S-S dimer hop)",
+  "mechanism": "H hops between adjacent S2 dimers",
+  "updated": "2026-04-04",
+
+  "barriers": [
+    {
+      "method": "GPAW",
+      "xc": "PBE",
+      "basis": "PW 350 eV",
+      "cell": "1x1x1 (12 atoms)",
+      "kpts": [2, 2, 2],
+      "E_a_eV": 0.181,
+      "images": 5,
+      "neb_type": "CI-NEB",
+      "neb_steps": 26,
+      "hardware": "RTX 3080 GPU"
+    },
+    {
+      "method": "Quantum ESPRESSO",
+      "xc": "PBE",
+      "basis": "USPP, ecutwfc 60 Ry",
+      "cell": "1x1x1 (12 atoms)",
+      "kpts": [2, 2, 2],
+      "E_a_eV": 0.190,
+      "images": 5,
+      "neb_type": "CI-NEB",
+      "neb_steps": 32,
+      "note": "Three-code cross-verify: GPAW/QE/ABACUS within 5%"
+    },
+    {
+      "method": "ABACUS v3.9",
+      "xc": "PBE",
+      "basis": "LCAO DZP",
+      "cell": "1x1x1 (12 atoms)",
+      "kpts": [2, 2, 2],
+      "E_a_eV": 0.187,
+      "images": 5,
+      "neb_type": "NEB",
+      "neb_steps": 31,
+      "hardware": "AMD Ryzen 9 7950X3D CPU"
+    },
+    {
+      "method": "ABACUS v3.9",
+      "xc": "PBE",
+      "basis": "LCAO DZP",
+      "cell": "2x2x2 (95 atoms)",
+      "kpts": "Gamma",
+      "E_a_eV": 0.075,
+      "note": "Forward barrier only. Intermediate minima at -0.156/-0.146 eV; effective barrier from intermediate = 0.231 eV. Size convergence significant."
+    },
+    {
+      "method": "MACE-MP-0",
+      "cell": "1x1x1 (12 atoms)",
+      "E_a_eV": 0.790,
+      "note": "ML significantly overestimates for pyrite (S2 dimer chemistry poorly captured)"
+    }
+  ],
+
+  "consensus": "0.18-0.19 eV hop barrier (1x1x1, three-code agreement within 5%). 2x2x2: lower forward barrier (0.075 eV) but intermediate minima complicate the picture.",
+  "physical_implication": "Low hop barrier, BUT vacancy formation energy E_f(V_S) = 1.95 eV makes effective diffusion barrier ~1.1 eV. Pyrite is NOT a fast H+ conductor despite low hop barrier.",
+
+  "vacancy_formation": {
+    "status": "running (ABACUS PW GPU, 96 atoms, 2x2x2 supercell, W1 instance)",
+    "note": "Literature E_f(V_S) ~ 1.95 eV"
+  },
+
+  "scripts": [
+    "tools/neb_pyrite_gpu.py (GPAW)",
+    "tools/neb_pyrite_qe_small.py (QE, 1x1x1)",
+    "tools/neb_pyrite_qe_2x2x2_gpu.py (QE, 2x2x2 GPU)",
+    "tools/neb_pyrite_abacus_1x1x1.py (ABACUS)"
+  ]
+}

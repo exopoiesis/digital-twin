@@ -1,0 +1,65 @@
+{
+  "mineral": "pentlandite",
+  "formula": "(Fe,Ni)9S8",
+  "space_group": "Fm-3m (#225)",
+  "property": "H+ vacancy diffusion barrier",
+  "mechanism": "S-vacancy hop (nearest S-S pair, 3.55 A)",
+  "updated": "2026-04-04",
+
+  "barriers": [
+    {
+      "method": "GPAW",
+      "xc": "PBE",
+      "basis": "PW 350 eV",
+      "cell": "primitive (17 atoms)",
+      "kpts": "Gamma",
+      "E_a_eV": 1.115,
+      "images": 5,
+      "neb_type": "CI-NEB",
+      "neb_steps": 24,
+      "hardware": "RTX 3080 GPU"
+    },
+    {
+      "method": "ABACUS v3.9",
+      "xc": "PBE",
+      "basis": "LCAO DZP",
+      "cell": "primitive (17 atoms)",
+      "kpts": "Gamma",
+      "E_a_eV": 0.900,
+      "images": 5,
+      "neb_type": "NEB",
+      "neb_steps": 17,
+      "hardware": "AMD Ryzen 9 7950X3D CPU"
+    },
+    {
+      "method": "MACE-MP-0",
+      "basis": "universal ML potential",
+      "cell": "primitive (17 atoms)",
+      "E_a_eV": 0.960,
+      "note": "ML systematically underestimates barriers (MAE ~0.2 eV)"
+    },
+    {
+      "method": "MACE-MP-0",
+      "basis": "universal ML potential",
+      "cell": "conventional (68 atoms)",
+      "E_a_eV": 1.430,
+      "note": "Size convergence: barrier increases ~0.5 eV from prim to conv cell"
+    }
+  ],
+
+  "consensus": "0.9-1.1 eV (primitive cell DFT); ~1.4 eV (conventional cell ML). DFT conv cell in progress.",
+  "physical_implication": "High barrier confirms pentlandite as effective proton barrier (D_H+ ~ 1e-18 cm2/s at 25C) while retaining high electronic conductivity (10-100 S/cm).",
+
+  "vacancy_formation": {
+    "E_vac_eV": 4.444,
+    "method": "ABACUS v3.9, PW GPU, kpts 2x2x2",
+    "cell": "conventional (68 atoms, Fm-3m)",
+    "note": "S-vacancy: E_vac = E(defect) + mu_S - E(pristine)"
+  },
+
+  "scripts": [
+    "tools/neb_pentlandite_gpu.py (GPAW)",
+    "tools/neb_pentlandite_abacus.py (ABACUS LCAO)",
+    "tools/neb_pentlandite_abacus_conv.py (ABACUS PW, conv cell)"
+  ]
+}

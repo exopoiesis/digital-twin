@@ -11,8 +11,9 @@ TM6v3 architecture (pentlandite + mackinawite membrane, two-chamber design).
 oracle/                 — ORACLE pipeline (Phases A → B → C → D)
   oracle/data/          — Precomputed datasets + trained models (~58 MB)
 hypothesis-tester/      — CLI for rapid hypothesis testing against the trained surrogate
-tools/                  — Vast.ai launch/monitoring scripts, DFT config generators
-example_results/        — Small JSON summaries for reference
+results/                — DFT NEB barriers and vacancy formation energies (per mineral)
+tools/                  — DFT NEB scripts (GPAW, ABACUS, QE), config generators, monitoring
+example_results/        — Small JSON summaries for ORACLE reference
 ```
 
 **Included pretrained artifacts** (no GPU needed to get started):
@@ -24,6 +25,8 @@ example_results/        — Small JSON summaries for reference
 
 ## Key results
 
+### ORACLE (surrogate modeling)
+
 | Metric | Value |
 |--------|-------|
 | Sobol × Gillespie samples | 262,144 |
@@ -32,6 +35,26 @@ example_results/        — Small JSON summaries for reference
 | Steady-state [formate] A* (PDE) | 2.29 mM |
 | k_cat decomplexation range | 7 orders of magnitude (1e-8 → 0.1 s⁻¹) |
 | Phase C 72h survival (4-species) | 100% |
+
+### DFT cross-verification (H⁺ diffusion barriers)
+
+Multi-code NEB calculations on iron sulfide minerals using GPAW, ABACUS, Quantum ESPRESSO, and MACE-MP-0.
+Full data in `results/` (one JSON per mineral).
+
+| Mineral | GPAW | ABACUS | QE | MACE | Consensus |
+|---------|:----:|:------:|:--:|:----:|-----------|
+| **Pentlandite** (Fe,Ni)₉S₈ | 1.115 eV | 0.900 eV | — | 0.96 eV | **0.9–1.1 eV** (strong proton barrier) |
+| **Mackinawite** FeS (intra-layer) | 0.738 eV | — | 2.479 eV* | 0.44 eV | **0.7 eV** lattice / **~0 eV** Grotthuss |
+| **Pyrite** FeS₂ | 0.181 eV | 0.187 eV | 0.190 eV | 0.79 eV | **0.18–0.19 eV** (three-code, ±5%) |
+| **Troilite** FeS | — | — | 0.375 eV† | 0.31 eV | ~0.37 eV (running) |
+
+\* QE mackinawite = cross-layer path (different from GPAW intra-layer). † Running, fmax=0.10.
+
+| Mineral | E_vac (S-vacancy) | Method |
+|---------|:-----------------:|--------|
+| Pentlandite | 4.444 eV | ABACUS PW GPU |
+| Mackinawite | 5.668 eV | ABACUS PW GPU |
+| Pyrite | running | ABACUS PW GPU |
 
 ## Quick start
 
@@ -66,7 +89,7 @@ python oracle/oracle_analysis.py oracle/data/oracle_full.npz \
   --output-dir oracle/data/
 
 # Phase B.1: generate PDE training data (~4h, GPU recommended)
-python oracle/oracle_phase_b_datagen.py --output oracle/data/oracle_membrane_50k.npz
+python oracle/oracle_phase_b_datagen.py --output oracle/data/oracle_membrane_50k.npz --n_samples 50000
 
 # Phase B.2: train FNO surrogate (~30 min, GPU)
 python oracle/oracle_phase_b_train.py --data oracle/data/oracle_membrane_50k.npz \
@@ -87,15 +110,16 @@ python oracle/oracle_phase_d_fno_ode.py --validate --scan
 
 See `oracle/README.md` and `hypothesis-tester/README.md` for details.
 
-## GPAW DFT: Computation Guide
+## DFT Computation Guides
 
-Running DFT on iron-sulfide minerals in the cloud? See **[GPAW_COMPUTATION_GUIDE.md](GPAW_COMPUTATION_GUIDE.md)** — a battle-tested reference covering:
+Battle-tested guides for running DFT on iron-sulfide minerals in the cloud:
 
-- **Hardware selection** — why CPU GHz matters more than GPU for GPAW, and why desktop Intel is a trap for MPI
-- **Real benchmarks** — timings for 10 minerals (8–136 atoms) across RTX 3060 to RTX 5070 Ti, with costs
-- **Bug Hall of Fame** — 15 documented bugs that cost us ~220 hours, so you don't repeat them
-- **SCF convergence recipes** — mixer settings, magnetic moments, and smearing by mineral type
-- **Operational patterns** — monitoring, log rotation, MPI guards, and stuck-process diagnostics
+- **[GPAW](GPAW_COMPUTATION_GUIDE.md)** — PW/FD modes, GPU FFT, SolvationGPAW, Bug Hall of Fame (~220h lost, documented)
+- **[ABACUS](ABACUS_COMPUTATION_GUIDE.md)** — PW GPU + LCAO, NEB, vacancy formation, nspin=2 caveats
+- **[Quantum ESPRESSO](QE_COMPUTATION_GUIDE.md)** — CPU/GPU NEB, npool optimization (up to 13x speedup), AFM limitations
+- **[JDFTx](JDFTX_COMPUTATION_GUIDE.md)** — CANDLE implicit solvation, metallic slab mixing, checkpointing lessons
+
+Each covers hardware selection, real benchmarks with costs, known bugs, and SCF convergence recipes.
 
 ## Requirements
 

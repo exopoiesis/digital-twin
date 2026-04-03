@@ -1,6 +1,6 @@
 """
 Ночная программа GPU расчётов для Q-071 и валидации.
-Запуск: python scripts/run_overnight.py
+Запуск: python run_overnight.py
 
 Расчёты запускаются последовательно (один GPU):
 1. Пентландит 2×2×2 суперячейка NEB (конвергенция по размеру)
@@ -10,6 +10,7 @@
 """
 import subprocess
 import time
+from pathlib import Path
 
 SCRIPTS = [
     ('pentlandite_2x2x2', 'neb_pentlandite_2x2x2_gpu.py'),
@@ -25,7 +26,7 @@ def run_one(name, script):
     print(f"{'='*70}\n", flush=True)
     t0 = time.time()
     result = subprocess.run(
-        ['python', '-u', f'/workspace/scripts/{script}'],
+        ['python', '-u', str(Path(__file__).parent / script)],
         cwd='/workspace'
     )
     elapsed = time.time() - t0

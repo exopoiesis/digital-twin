@@ -1,0 +1,36 @@
+{
+  "mineral": "troilite",
+  "formula": "FeS",
+  "space_group": "P-62c (#190)",
+  "property": "H+ vacancy diffusion barrier",
+  "mechanism": "S-vacancy hop in NiAs-type structure",
+  "updated": "2026-04-04",
+
+  "barriers": [
+    {
+      "method": "Quantum ESPRESSO",
+      "xc": "PBE",
+      "basis": "PAW, ecutwfc 60 Ry",
+      "cell": "1x1x1 (24 atoms)",
+      "kpts": [2, 2, 2],
+      "E_a_eV": 0.375,
+      "images": 5,
+      "neb_type": "CI-NEB",
+      "neb_steps": 25,
+      "status": "running (fmax=0.103, target 0.05, ~6-8h to convergence)",
+      "note": "Barrier may shift slightly at full convergence. npool=10 parallelization."
+    },
+    {
+      "method": "MACE-MP-0",
+      "cell": "1x1x1 (24 atoms)",
+      "E_a_eV": 0.310,
+      "note": "ML estimate, not yet DFT-verified with second code"
+    }
+  ],
+
+  "physical_implication": "Moderate barrier — troilite is a modest H+ conductor. Relevant as a potential impurity phase in mackinawite/pentlandite systems.",
+
+  "scripts": [
+    "tools/neb_troilite_qe.py (QE)"
+  ]
+}
